@@ -1,14 +1,20 @@
-# Reflection Journal & Gemini AI Companion
+# Thoughts and Reflections
 
-A production-grade, user-authenticated journaling and reflective coaching web application powered by the **Gemini 3.6 Flash API**, **Firebase Authentication**, **Cloud Firestore**, and **Google Maps Platform**.
+A production-grade, privacy-first personal reflection and journaling companion powered by the **Gemini 3.6 Flash API**, **Firebase Authentication**, **Cloud Firestore**, and **Google Maps Platform**.
 
-The platform provides end-to-end user isolation, server-side role-based access control (RBAC), outbound SSRF defense for external webhooks, dual-key geospatial privacy, and comprehensive administrative moderation—built to adhere strictly to OWASP Top 10 Web & LLM standards.
+The platform provides end-to-end user isolation, dual authentication (Google Sign-In and salted SHA-256 email/password accounts), server-side role-based access control (RBAC), outbound SSRF defense for external notifications, dual-key geospatial privacy, and comprehensive administrative moderation—built to adhere strictly to OWASP Top 10 Web & LLM standards.
 
 ---
 
 ## Key Features & Security Architecture
 
-* **AI Reflective Dialogue**: Multi-turn conversational coaching powered by `@google/genai` on an Express backend with an automated 4-tier model fallback ladder (`gemini-3.6-flash`, `gemini-2.5-flash`, etc.).
+* **Multi-Turn AI Reflective Dialogue**: Conversational coaching powered by `@google/genai` on an Express backend with an automated 4-tier model fallback ladder (`gemini-3.6-flash`, `gemini-3.1-flash-lite`, `gemini-flash-latest`, `gemini-3.7-flash`).
+* **Dual Authentication Engine**:
+  * *Google One-Click Sign-In*: Instant federated authentication via Firebase Auth with popup.
+  * *Separated Email Sign Up & Sign In*: Dedicated registration and login workflows with client-salted SHA-256 password hashing, minimum 6-character complexity, and defense against duplicate registrations.
+* **Mood & Sentiment Trend Dashboard**:
+  * Constrained structured output schema on Gemini responses extracting bounded valence scores (`-1.0` to `+1.0`) and sentiment labels.
+  * Strict per-user scoped trend timelines and chart visualizations with zero cross-user leakage.
 * **Google Maps Dual-Key Architecture**:
   * *Browser Key*: Restricted strictly by HTTP referrer in Google Cloud Console, used only for the interactive Maps JavaScript client.
   * *Server Key*: Restricted by IP address and accessed strictly via Secret Manager on the backend for geocoding and reverse lookup proxies.
@@ -28,9 +34,6 @@ The platform provides end-to-end user isolation, server-side role-based access c
 * **Expiring Shareable Read Links**:
   * 192-bit cryptographic entropy URLs with time-to-live expiration and instant one-click author revocation.
   * Field minimization stripping location and telemetry by default.
-* **Mood & Sentiment Trend Visualization**:
-  * Constrained structured output schema on Gemini responses extracting bounded valence scores (`-1.0` to `+1.0`) and sentiment labels.
-  * Strict per-user scoped trend timelines and chart visualizations with zero cross-user leakage.
 
 ---
 
@@ -38,8 +41,8 @@ The platform provides end-to-end user isolation, server-side role-based access c
 
 | Component | Technology | Purpose & Security Controls |
 | :--- | :--- | :--- |
-| **User Identity** | Firebase Auth | Federated Google Sign-In with popup. Authenticated session tokens. |
-| **Database** | Cloud Firestore | Owner-isolated collections (`/users/{userId}/entries`) with zero-insecure defaults and coordinate shape rules. |
+| **User Identity** | Firebase Auth & Encrypted Auth | Federated Google Sign-In with popup + Salted SHA-256 Email/Password accounts. |
+| **Database** | Cloud Firestore | Owner-isolated collections (`/users/{userId}/entries`) with zero-insecure defaults, coordinate shape rules, and mood score validation. |
 | **AI Processing** | Gemini API (`@google/genai`) | Multi-turn coaching, brainstorming, summarization, and executive synthesis. |
 | **Geospatial** | Google Maps Platform | Referrer-restricted browser JS API + IP-restricted server geocoding proxy. |
 | **Notifications** | Slack Webhook Engine | Outbound SSRF pre-flight check, DNS IP validation, anti-ping sanitization, and idempotency. |
@@ -76,21 +79,25 @@ gcloud services enable \
 Store application secrets in Google Cloud Secret Manager to ensure they are never committed to version control or included in client bundles:
 
 ```bash
-# 1. Gemini API Key
+# 1. Create and populate the Gemini API key secret
 gcloud secrets create GEMINI_API_KEY --replication-policy="automatic"
 echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets versions add GEMINI_API_KEY --data-file=-
 
-# 2. Google Maps Server Key (IP-restricted)
+# 2. Create Google Maps Server Key (IP-restricted)
 gcloud secrets create GOOGLE_MAPS_SERVER_KEY --replication-policy="automatic"
 echo -n "YOUR_MAPS_SERVER_KEY" | gcloud secrets versions add GOOGLE_MAPS_SERVER_KEY --data-file=-
 
-# 3. Organization Slack Webhook URL
+# 3. Create Organization Slack Webhook URL
 gcloud secrets create SLACK_WEBHOOK_URL --replication-policy="automatic"
 echo -n "https://hooks.slack.com/services/T000/B000/XXXX" | gcloud secrets versions add SLACK_WEBHOOK_URL --data-file=-
 
-# 4. Grant Cloud Run runtime service account access to secrets
+# 4. Grant the default Cloud Run service account access to read secrets
 export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
-for SECRET in GEMINI_API_KEY GOOGLE_MAPS_SERVER_KEY SLACK_WEBHOOK_URL; do
+gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+for SECRET in GOOGLE_MAPS_SERVER_KEY SLACK_WEBHOOK_URL; do
   gcloud secrets add-iam-policy-binding $SECRET \
     --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
     --role="roles/secretmanager.secretAccessor"
@@ -137,7 +144,24 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // User Data Isolation & Location Shape Validation
+    // User Interactions with Location & Mood Shape Validation
+    match /users/{userId}/interactions/{interactionId} {
+      allow create: if request.auth != null && request.auth.uid == userId
+        && (!("location" in request.resource.data) ||
+            (request.resource.data.location.lat is number &&
+             request.resource.data.location.lat >= -90 &&
+             request.resource.data.location.lat <= 90 &&
+             request.resource.data.location.lng is number &&
+             request.resource.data.location.lng >= -180 &&
+             request.resource.data.location.lng <= 180))
+        && (!("moodScore" in request.resource.data) ||
+            (request.resource.data.moodScore is number &&
+             request.resource.data.moodScore >= -1 &&
+             request.resource.data.moodScore <= 1));
+      allow read, update, delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    // User Entries Data Isolation
     match /users/{userId}/entries/{entryId} {
       allow create: if request.auth != null && request.auth.uid == userId
         && (!("location" in request.resource.data) ||
@@ -161,27 +185,9 @@ service cloud.firestore {
       allow read, delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
 
-    match /users/{userId}/interactions/{interactionId} {
-      allow create: if request.auth != null && request.auth.uid == userId
-        && (!("location" in request.resource.data) ||
-            request.resource.data.location == null ||
-            (request.resource.data.location.lat is number &&
-             request.resource.data.location.lat >= -90 &&
-             request.resource.data.location.lat <= 90 &&
-             request.resource.data.location.lng is number &&
-             request.resource.data.location.lng >= -180 &&
-             request.resource.data.location.lng <= 180));
-      allow update: if (request.auth != null && request.auth.uid == userId
-        && (!("location" in request.resource.data) ||
-            request.resource.data.location == null ||
-            (request.resource.data.location.lat is number &&
-             request.resource.data.location.lat >= -90 &&
-             request.resource.data.location.lat <= 90 &&
-             request.resource.data.location.lng is number &&
-             request.resource.data.location.lng >= -180 &&
-             request.resource.data.location.lng <= 180)))
-        || isAdmin();
-      allow read, delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    // Expiring Share Links: Backend-only access via Admin SDK
+    match /shareLinks/{token} {
+      allow read, write: if false;
     }
   }
 }
@@ -226,7 +232,7 @@ Deploy the container to Google Cloud Run with Secret Manager environment binding
 
 ```bash
 # 1. Build and deploy container to Cloud Run
-gcloud run deploy reflection-journal \
+gcloud run deploy thoughts-and-reflections \
   --source . \
   --region us-central1 \
   --platform managed \
@@ -236,8 +242,8 @@ gcloud run deploy reflection-journal \
     GOOGLE_MAPS_SERVER_KEY=GOOGLE_MAPS_SERVER_KEY:latest,\
     SLACK_WEBHOOK_URL=SLACK_WEBHOOK_URL:latest
 
-# 2. Apply campaign and verification resource labels
-gcloud run services update reflection-journal \
+# 2. Apply campaign verification resource labels
+gcloud run services update thoughts-and-reflections \
   --update-labels=dev-tutorial=cloud-run-ai-challenge \
   --region=us-central1
 ```
@@ -246,17 +252,33 @@ gcloud run services update reflection-journal \
 
 ## 6. Functional & Security Verification Walkthrough
 
-The following 10 test cases verify end-to-end functionality and security compliance:
+The following test cases verify end-to-end functionality and security compliance:
 
-### Test Case 1: Authentication & Landing Isolation
+### Test Case 1: Authentication & Landing Page Isolation
 * **Action**: Navigate to `/`.
-* **Expected Result**: Clean landing view with security badges and "Continue with Google Sign-In". No user data or reflections are visible.
+* **Expected Result**: Clean landing view with security badges, "Continue with Google Sign-In", and an expandable Email Sign Up / Sign In form. No user reflections or personal data are exposed before authentication.
 
-### Test Case 2: Multi-Turn Reflective Dialogue with Gemini
-* **Action**: Sign in and submit a prompt (e.g., "I feel overwhelmed with prioritization").
-* **Expected Result**: Server calls `gemini-3.6-flash` via the Express proxy. The AI provides guided reflection prompts and saves the turn to the conversation transcript.
+### Test Case 2: Email Sign Up with Salted Password
+* **Action**: Click "Or sign up / sign in with email & password", select the **Sign Up (New Account)** tab, input email and 6+ character password with confirmation, and submit.
+* **Expected Result**: The account is created with a cryptographic SHA-256 hash. The user is logged in directly to their private workspace.
 
-### Test Case 3: Google Maps Dual-Key Location Attachment
+### Test Case 3: Email Sign In & Credential Validation
+* **Action**: Sign out, select the **Sign In** tab, input the registered email with an invalid password, and submit.
+* **Expected Result**: System rejects the request: *"Incorrect password for this email address. Please check your password and try again."* When the correct password is provided, access is granted immediately.
+
+### Test Case 4: Google Sign-In Override
+* **Action**: Click "Continue with Google".
+* **Expected Result**: Immediate federated authentication bypassing email password requirements.
+
+### Test Case 5: Multi-Turn Reflective Dialogue with Gemini
+* **Action**: In the reflection workspace, submit a journal thought (e.g., "I feel overwhelmed with prioritization").
+* **Expected Result**: Server calls `gemini-3.6-flash` via the Express proxy with automated fallback. The AI provides guided reflection prompts and saves the turn to the conversation transcript.
+
+### Test Case 6: Mood Trend & Sentiment Extraction
+* **Action**: Submit multiple reflections across different emotional states.
+* **Expected Result**: Gemini extracts structured valence scores (`-1.0` to `+1.0`) and sentiment tags. The "Mood Trends" tab renders interactive charts isolated strictly to the authenticated user.
+
+### Test Case 7: Google Maps Dual-Key Location Attachment
 * **Action**: Click "Attach Reflection Place / Location", search for a location or click the interactive map.
 * **Expected Result**:
   * Browser uses `VITE_GOOGLE_MAPS_BROWSER_KEY` for map rendering.
@@ -264,36 +286,23 @@ The following 10 test cases verify end-to-end functionality and security complia
   * Coordinates are validated within `[-90, 90]` and `[-180, 180]`.
   * User can toggle "~100m Privacy Rounding" before saving.
 
-### Test Case 4: Owner Isolation & Firestore Rules Validation
-* **Action**: Check Firestore document path `/users/{userId}/entries/{entryId}`.
+### Test Case 8: Owner Isolation & Firestore Rules Validation
+* **Action**: Inspect Firestore document path `/users/{userId}/interactions/{interactionId}`.
 * **Expected Result**: Document is written under the user's isolated document tree. Any attempt by another non-admin user to read this path results in `PERMISSION_DENIED`.
 
-### Test Case 5: Role Resolution & Anti-Self-Elevation
+### Test Case 9: Expiring Shareable Read Links
+* **Action**: Click "Share Reflection", select an expiration window (1 hour, 24 hours, or 7 days), and copy the link.
+* **Expected Result**: Generates a 192-bit URL-safe token. Viewing the link displays a sanitized, read-only view. Clicking "Revoke Access" instantly invalidates the link.
+
+### Test Case 10: Role Resolution & Anti-Self-Elevation
 * **Action**: In the Admin Dashboard under the "RBAC Security" tab, click "Simulate Self-Elevation Attack".
 * **Expected Result**: The backend rejects the attempt with `403 Forbidden` (`Admins cannot modify their own role. Anti-self-elevation enforced.`).
 
-### Test Case 6: Content Moderation & Immutable Audit Trail
-* **Action**: In the Admin Dashboard "Moderation Center", add a note or flag an entry.
-* **Expected Result**: Action succeeds and generates an immutable record in `/adminAuditLog/{logId}` recording the admin's UID, action, before/after values, and timestamp.
-
-### Test Case 7: Crisis Alert Slack Notification Trigger
-* **Action**: In the journal editor, switch Entry Type from `Standard Reflection` to `🚨 Crisis & Urgent Support` and save.
+### Test Case 11: Crisis Alert Slack Notification Trigger & SSRF Guard
+* **Action**: Switch Entry Type to `🚨 Crisis & Urgent Support` and save. In the Admin Dashboard "Slack & SSRF Guard" tab, test vector `🚨 Metadata SSRF (169.254.169.254)`.
 * **Expected Result**:
-  * Automatic webhook dispatch triggers to Slack.
-  * Slack Block Kit alert includes sanitized title, masked user ID, timestamp, and crisis coaching badge.
-  * Webhook destination is masked in client logs (`hooks.slack.com/services/ORG_...`).
-
-### Test Case 8: Outbound SSRF & Cloud Metadata Defense
-* **Action**: In the Admin Dashboard "Slack & SSRF Guard" tab, click the `🚨 Metadata SSRF (169.254.169.254)` test vector.
-* **Expected Result**: SSRF inspector rejects the URL with `SSRF Violation: Resolved IP 169.254.169.254 belongs to a prohibited or link-local subnet`.
-
-### Test Case 9: Webhook Rate Limiting & Flooding Protection
-* **Action**: Rapidly dispatch multiple test alerts exceeding 5 per 10 minutes.
-* **Expected Result**: Token bucket rate limiter triggers: `Notification rate limit exceeded (5 per 10m). Please retry after X seconds.`
-
-### Test Case 10: Revision-Based Idempotency Caching
-* **Action**: Save the same crisis entry twice without adding new dialogue turns.
-* **Expected Result**: The second request is fulfilled from the idempotency cache (`slack_${entryId}_${turns.length}`) without issuing a duplicate outbound POST to Slack.
+  * Outbound webhook dispatches with sanitized mention protection.
+  * Metadata SSRF attempt is blocked with: `SSRF Violation: Resolved IP 169.254.169.254 belongs to a prohibited or link-local subnet`.
 
 ---
 
@@ -303,7 +312,9 @@ The following 10 test cases verify end-to-end functionality and security complia
 | :--- | :---: | :--- |
 | **Outbound Webhook HTTP Redirect Traversal** | **HIGH** | `redirect: 'error'` enforced on outbound `fetch()` to prevent 3xx redirects to internal cloud metadata. |
 | **Unbounded In-Memory Cache Growth** | **HIGH** | Implemented 24-hour TTL and hard capacity limits with eviction for idempotency records and rate-limiting buckets (CWE-400 mitigation). |
+| **Credential & Key Exposure** | **HIGH** | GCP Secret Manager integration for all API keys, webhook URLs, and server credentials; zero hardcoding. |
 | **Non-Standard Port Scanning** | **MEDIUM** | Strict restriction to standard HTTPS port 443 during webhook URL validation. |
 | **TOCTOU DNS Rebinding** | **MEDIUM** | Domain allowlisting restricted to verified providers (`hooks.slack.com`, `discord.com`, `discordapp.com`). |
 | **Mention & Ping Injection** | **LOW** | Server-side sanitizer neutralizes `@everyone`, `@here`, `<@...>`, and escapes mrkdwn formatting brackets. |
+
 
