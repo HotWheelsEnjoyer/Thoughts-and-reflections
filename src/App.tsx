@@ -14,6 +14,8 @@ import { SharedEntryView } from './components/SharedEntryView';
 import {
   subscribeToAuth,
   signInWithGoogle,
+  signUpWithEmailAndPassword,
+  signInWithEmailAndPasswordAuth,
   signInWithDirectEmail,
   logOut,
   fetchUserEntries,
@@ -124,15 +126,31 @@ export default function App() {
     }
   };
 
-  const handleDirectSignIn = async (email: string, name?: string) => {
+  const handleDirectSignIn = async (email: string, password: string) => {
     setSignInError(null);
     setIsSigningIn(true);
     try {
-      const loggedUser = await signInWithDirectEmail(email, name);
+      const loggedUser = await signInWithEmailAndPasswordAuth(email, password);
       setUser(loggedUser);
     } catch (err: any) {
-      console.error('Direct sign-in error:', err);
-      setSignInError(err.message || 'Failed to sign in. Please check email and try again.');
+      console.error('Email sign-in error:', err);
+      setSignInError(err.message || 'Failed to sign in. Please verify your credentials.');
+      throw err;
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleDirectSignUp = async (email: string, password: string, name?: string) => {
+    setSignInError(null);
+    setIsSigningIn(true);
+    try {
+      const loggedUser = await signUpWithEmailAndPassword(email, password, name);
+      setUser(loggedUser);
+    } catch (err: any) {
+      console.error('Email sign-up error:', err);
+      setSignInError(err.message || 'Failed to create account. Please try again.');
+      throw err;
     } finally {
       setIsSigningIn(false);
     }
@@ -233,6 +251,7 @@ export default function App() {
           <LandingPage
             onSignIn={handleSignIn}
             onDirectSignIn={handleDirectSignIn}
+            onDirectSignUp={handleDirectSignUp}
             isLoading={isSigningIn}
             errorMessage={signInError}
           />

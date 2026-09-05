@@ -656,7 +656,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               Begin your reflection
             </h3>
             <p className="text-stone-500 text-sm max-w-md mx-auto mb-6">
-              Write whatever is occupying your thoughts. Gemini 3.6 Flash will converse with you to help reframe, organize, or explore deeper questions.
+              Write whatever is occupying your thoughts. Your companion will converse with you to help reframe, organize, or explore deeper questions.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
@@ -709,7 +709,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
                       <>
                         <Bot className="w-3.5 h-3.5 text-amber-600" />
                         <span className="font-medium text-stone-900">
-                          {turn.modelUsed || 'Gemini 3.6 Flash'}
+                          {turn.modelUsed ? `Reflected via ${turn.modelUsed}` : 'AI Companion'}
                         </span>
                       </>
                     )}
@@ -733,8 +733,8 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
           <div className="flex items-start">
             <div className="bg-white border border-stone-200 rounded-2xl rounded-bl-xs p-4 shadow-xs flex items-center space-x-3">
               <Loader2 className="w-4 h-4 text-amber-600 animate-spin" />
-              <span className="text-xs text-stone-600 font-medium">
-                Gemini 3.6 Flash is reflecting...
+              <span className="text-xs text-stone-700 font-medium">
+                Reflecting on your thoughts...
               </span>
             </div>
           </div>
@@ -811,7 +811,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               )}
               {saveStatus === 'saved' && (
                 <span className="inline-flex items-center gap-1 text-emerald-700">
-                  <Check className="w-3 h-3" /> Saved to Firestore
+                  <Check className="w-3 h-3" /> Saved securely
                 </span>
               )}
               {saveStatus === 'error' && (

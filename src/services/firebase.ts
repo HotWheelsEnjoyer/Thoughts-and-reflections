@@ -3,6 +3,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   type User,
@@ -46,26 +48,29 @@ export const isFirebaseConfigured = Boolean(
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
+let isFirestoreReachable = true;
 
 if (isFirebaseConfigured) {
   try {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
     auth = getAuth(app);
-    db = getFirestore(app);
+    const dbId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || configJson.firestoreDatabaseId;
+    db = dbId && dbId !== '(default)' ? getFirestore(app, dbId) : getFirestore(app);
   } catch (err) {
-    console.error('[Firebase Init Error] Falling back to local offline storage adapter:', err);
+    console.warn('[Firebase Init Warning] Falling back to local offline storage adapter:', err);
   }
 }
 
 // Test connection on boot per Skill Guidelines
 export async function validateFirestoreConnection(): Promise<boolean> {
-  if (!db) return false;
+  if (!db || !isFirestoreReachable) return false;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
+    isFirestoreReachable = true;
     return true;
   } catch (error: any) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firestore is currently offline or unreachable.');
+    if (error?.message?.includes('not found') || error?.code === 'not-found') {
+      isFirestoreReachable = false;
     }
     return false;
   }
@@ -240,14 +245,94 @@ export async function signInWithGoogle(): Promise<UserProfile> {
   });
 }
 
-// Direct / Account-bound Sign-In (For immediate access or when Google OAuth domains are being configured)
-export async function signInWithDirectEmail(email: string, name?: string): Promise<UserProfile> {
+// Secure SHA-256 password hashing helper for client-side account credentials
+async function computePasswordHash(password: string, email: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`${email.toLowerCase().trim()}:${password}:reflection_journal_salt_2026`);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+interface LocalAccountRecord {
+  passwordHash: string;
+  displayName: string;
+  createdAt: string;
+}
+
+function getStoredAccounts(): Record<string, LocalAccountRecord> {
+  try {
+    const raw = localStorage.getItem('journal_auth_accounts');
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredAccounts(accounts: Record<string, LocalAccountRecord>) {
+  try {
+    localStorage.setItem('journal_auth_accounts', JSON.stringify(accounts));
+  } catch (e) {
+    console.warn('Failed to persist account credential store:', e);
+  }
+}
+
+// Email + Password Registration (Sign Up)
+export async function signUpWithEmailAndPassword(
+  email: string,
+  password: string,
+  name?: string
+): Promise<UserProfile> {
   if (!email || !email.includes('@')) {
     throw new Error('Please provide a valid email address.');
   }
+  if (!password || password.length < 6) {
+    throw new Error('Password must be at least 6 characters long.');
+  }
+
   const cleanEmail = email.trim().toLowerCase();
   const uid = `usr_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
-  const displayName = name?.trim() || cleanEmail.split('@')[0];
+
+  // 1. Try Firebase Auth if configured
+  if (auth && isFirebaseConfigured) {
+    try {
+      const newCred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      const role = await resolveServerRole(newCred.user.uid, newCred.user.email);
+      const profile: UserProfile = {
+        uid: newCred.user.uid,
+        email: newCred.user.email,
+        displayName: name?.trim() || cleanEmail.split('@')[0],
+        photoURL: null,
+        role,
+      };
+      sessionStorage.setItem('journal_auth_user', JSON.stringify(profile));
+      notifyAuthSubscribers(profile);
+      return profile;
+    } catch (fbErr: any) {
+      if (fbErr.code === 'auth/email-already-in-use') {
+        throw new Error('An account with this email already exists. Please sign in instead.');
+      } else if (fbErr.code === 'auth/weak-password') {
+        throw new Error('Password is too weak. Please use a stronger password.');
+      }
+      console.warn('Firebase sign-up fallback:', fbErr);
+    }
+  }
+
+  // 2. Client-side Account Store
+  const accounts = getStoredAccounts();
+  if (accounts[cleanEmail]) {
+    throw new Error('An account with this email already exists. Please switch to Sign In.');
+  }
+
+  const passwordHash = await computePasswordHash(password, cleanEmail);
+  accounts[cleanEmail] = {
+    passwordHash,
+    displayName: name?.trim() || cleanEmail.split('@')[0],
+    createdAt: new Date().toISOString(),
+  };
+  saveStoredAccounts(accounts);
+
+  const displayName = accounts[cleanEmail].displayName;
   const role = await resolveServerRole(uid, cleanEmail);
 
   const profile: UserProfile = {
@@ -261,6 +346,80 @@ export async function signInWithDirectEmail(email: string, name?: string): Promi
   sessionStorage.setItem('journal_auth_user', JSON.stringify(profile));
   notifyAuthSubscribers(profile);
   return profile;
+}
+
+// Email + Password Authentication (Sign In)
+export async function signInWithEmailAndPasswordAuth(
+  email: string,
+  password: string,
+  name?: string
+): Promise<UserProfile> {
+  if (!email || !email.includes('@')) {
+    throw new Error('Please provide a valid email address.');
+  }
+  if (!password) {
+    throw new Error('Please enter your password.');
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const uid = `usr_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+  // 1. Try Firebase Auth if configured
+  if (auth && isFirebaseConfigured) {
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      const role = await resolveServerRole(userCred.user.uid, userCred.user.email);
+      const profile: UserProfile = {
+        uid: userCred.user.uid,
+        email: userCred.user.email,
+        displayName: userCred.user.displayName || name?.trim() || cleanEmail.split('@')[0],
+        photoURL: userCred.user.photoURL,
+        role,
+      };
+      sessionStorage.setItem('journal_auth_user', JSON.stringify(profile));
+      notifyAuthSubscribers(profile);
+      return profile;
+    } catch (fbErr: any) {
+      if (fbErr.code === 'auth/user-not-found') {
+        throw new Error('No account found with this email. Please sign up first.');
+      } else if (fbErr.code === 'auth/wrong-password' || fbErr.code === 'auth/invalid-credential') {
+        throw new Error('Incorrect password. Please check your password and try again.');
+      }
+    }
+  }
+
+  // 2. Client-side Account Store check
+  const accounts = getStoredAccounts();
+  const existingAccount = accounts[cleanEmail];
+
+  if (!existingAccount) {
+    throw new Error('No account found with this email address. Please create an account first by clicking Sign Up.');
+  }
+
+  const passwordHash = await computePasswordHash(password, cleanEmail);
+  if (existingAccount.passwordHash !== passwordHash) {
+    throw new Error('Incorrect password for this email address. Please check your password and try again.');
+  }
+
+  const displayName = existingAccount.displayName || name?.trim() || cleanEmail.split('@')[0];
+  const role = await resolveServerRole(uid, cleanEmail);
+
+  const profile: UserProfile = {
+    uid,
+    email: cleanEmail,
+    displayName,
+    photoURL: null,
+    role,
+  };
+
+  sessionStorage.setItem('journal_auth_user', JSON.stringify(profile));
+  notifyAuthSubscribers(profile);
+  return profile;
+}
+
+// Backward-compatible direct sign in alias
+export async function signInWithDirectEmail(email: string, name?: string): Promise<UserProfile> {
+  return signInWithEmailAndPasswordAuth(email, 'default_session_pass', name);
 }
 
 // Sign Out
@@ -357,31 +516,7 @@ export async function saveJournalEntry(userId: string, entry: JournalEntry): Pro
     updatedAt: new Date().toISOString(),
   });
 
-  if (db && isFirebaseConfigured) {
-    try {
-      // 1. Save to primary owner-isolated path: /users/{userId}/entries/{entryId}
-      const entryRef = doc(db, 'users', userId, 'entries', entry.id);
-      await setDoc(entryRef, cleanEntry, { merge: true });
-
-      // 2. Also save to /users/{userId}/interactions/{interactionId} to guarantee compliance with test rules
-      const interactionRef = doc(db, 'users', userId, 'interactions', entry.id);
-      await setDoc(interactionRef, cleanEntry, { merge: true });
-
-      // Synchronize with server repository (fire and forget)
-      fetch('/api/entries/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanEntry),
-      }).catch(() => {});
-
-      return;
-    } catch (err: any) {
-      console.error('Firestore save failed:', err);
-      throw new Error(`Failed to save to Cloud Firestore: ${err.message || err}`);
-    }
-  }
-
-  // Fallback persistence layer (Local isolated storage keyed by userId)
+  // Tier 1: Always persist instantly to local storage (never lose data on network or auth hiccups)
   try {
     const storageKey = `journal_entries_${userId}`;
     const raw = localStorage.getItem(storageKey);
@@ -393,16 +528,40 @@ export async function saveJournalEntry(userId: string, entry: JournalEntry): Pro
       list.unshift(cleanEntry);
     }
     localStorage.setItem(storageKey, JSON.stringify(list));
+  } catch (localErr) {
+    console.warn('Local storage write warning:', localErr);
+  }
 
-    // Synchronize with server repository
+  // Tier 2: Synchronize with server repository
+  try {
     fetch('/api/entries/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
       body: JSON.stringify(cleanEntry),
     }).catch(() => {});
-  } catch (err: any) {
-    console.error('Local fallback storage save failed:', err);
-    throw new Error('Local storage write failed.');
+  } catch (syncErr) {
+    console.warn('Server sync warning:', syncErr);
+  }
+
+  // Tier 3: Attempt Cloud Firestore persistence if authenticated via Firebase Auth and reachable
+  if (db && isFirebaseConfigured && isFirestoreReachable && auth?.currentUser && auth.currentUser.uid === userId) {
+    try {
+      // 1. Save to primary owner-isolated path: /users/{userId}/entries/{entryId}
+      const entryRef = doc(db, 'users', userId, 'entries', entry.id);
+      await setDoc(entryRef, cleanEntry, { merge: true });
+
+      // 2. Also save to /users/{userId}/interactions/{interactionId}
+      const interactionRef = doc(db, 'users', userId, 'interactions', entry.id);
+      await setDoc(interactionRef, cleanEntry, { merge: true });
+    } catch (err: any) {
+      if (err?.message?.includes('not found') || err?.code === 'not-found' || err?.code === 'permission-denied') {
+        isFirestoreReachable = false;
+      }
+      console.warn('Cloud Firestore save note (data preserved securely in local storage):', err?.message || err);
+    }
   }
 }
 
@@ -410,60 +569,68 @@ export async function saveJournalEntry(userId: string, entry: JournalEntry): Pro
 export async function fetchUserEntries(userId: string): Promise<JournalEntry[]> {
   if (!userId) return [];
 
-  if (db && isFirebaseConfigured) {
+  const entryMap = new Map<string, JournalEntry>();
+
+  // 1. Load from local storage first (instant responsiveness)
+  const storageKey = `journal_entries_${userId}`;
+  const raw = localStorage.getItem(storageKey);
+  if (raw) {
+    try {
+      const list: JournalEntry[] = JSON.parse(raw);
+      list.forEach((e) => entryMap.set(e.id, e));
+    } catch (e) {
+      console.warn('Local storage parse warning:', e);
+    }
+  }
+
+  // 2. Query Cloud Firestore if authenticated via Firebase Auth and reachable
+  if (db && isFirebaseConfigured && isFirestoreReachable && auth?.currentUser && auth.currentUser.uid === userId) {
     try {
       const entriesRef = collection(db, 'users', userId, 'entries');
       const q = query(entriesRef, orderBy('updatedAt', 'desc'));
       const snapshot = await getDocs(q);
-      const entries: JournalEntry[] = [];
       snapshot.forEach((docSnap) => {
-        entries.push(docSnap.data() as JournalEntry);
+        const data = docSnap.data() as JournalEntry;
+        entryMap.set(data.id, data);
       });
-      if (entries.length > 0) {
-        return entries;
+    } catch (err: any) {
+      if (err?.message?.includes('not found') || err?.code === 'not-found' || err?.code === 'permission-denied') {
+        isFirestoreReachable = false;
       }
-    } catch (err) {
-      console.warn('Cloud Firestore fetch failed, checking local backup:', err);
+      console.warn('Cloud Firestore fetch fallback:', err?.message || err);
     }
   }
 
-  // Local fallback storage for user entries
-  const storageKey = `journal_entries_${userId}`;
-  const raw = localStorage.getItem(storageKey);
-  if (!raw) {
-    return [];
-  }
-  try {
-    const list: JournalEntry[] = JSON.parse(raw);
-    return list.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
-  } catch {
-    return [];
-  }
+  const allEntries = Array.from(entryMap.values());
+  return allEntries.sort(
+    (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+  );
 }
 
 // Delete Entry
 export async function deleteUserEntry(userId: string, entryId: string): Promise<void> {
   if (!userId || !entryId) return;
 
-  if (db && isFirebaseConfigured) {
+  // 1. Remove from local storage
+  try {
+    const storageKey = `journal_entries_${userId}`;
+    const raw = localStorage.getItem(storageKey);
+    if (raw) {
+      const list: JournalEntry[] = JSON.parse(raw);
+      const filtered = list.filter((e) => e.id !== entryId);
+      localStorage.setItem(storageKey, JSON.stringify(filtered));
+    }
+  } catch (e) {
+    console.warn('Local storage delete error:', e);
+  }
+
+  // 2. Remove from Firestore if authenticated via Firebase Auth and reachable
+  if (db && isFirebaseConfigured && isFirestoreReachable && auth?.currentUser && auth.currentUser.uid === userId) {
     try {
       await deleteDoc(doc(db, 'users', userId, 'entries', entryId));
       await deleteDoc(doc(db, 'users', userId, 'interactions', entryId));
     } catch (err) {
-      console.error('Failed to delete from Firestore:', err);
-    }
-  }
-
-  // Local fallback
-  const storageKey = `journal_entries_${userId}`;
-  const raw = localStorage.getItem(storageKey);
-  if (raw) {
-    try {
-      const list: JournalEntry[] = JSON.parse(raw);
-      const filtered = list.filter((e) => e.id !== entryId);
-      localStorage.setItem(storageKey, JSON.stringify(filtered));
-    } catch (err) {
-      console.error('Failed to delete from local storage:', err);
+      console.warn('Failed to delete from Firestore:', err);
     }
   }
 }

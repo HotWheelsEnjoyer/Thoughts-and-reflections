@@ -1,9 +1,25 @@
 import React, { useState } from 'react';
-import { Sparkles, Shield, Lock, History, MessageSquare, ArrowRight, Mail, HelpCircle, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
+import {
+  Sparkles,
+  Shield,
+  Lock,
+  History,
+  MessageSquare,
+  ArrowRight,
+  Mail,
+  CheckCircle2,
+  KeyRound,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  UserPlus,
+  LogIn,
+} from 'lucide-react';
 
 interface LandingPageProps {
   onSignIn: () => void;
-  onDirectSignIn?: (email: string, name?: string) => Promise<void>;
+  onDirectSignIn?: (email: string, password: string) => Promise<void>;
+  onDirectSignUp?: (email: string, password: string, name?: string) => Promise<void>;
   isLoading: boolean;
   userEmailSuggestion?: string;
   errorMessage?: string | null;
@@ -12,26 +28,61 @@ interface LandingPageProps {
 export const LandingPage: React.FC<LandingPageProps> = ({
   onSignIn,
   onDirectSignIn,
+  onDirectSignUp,
   isLoading,
-  userEmailSuggestion = 'nimalanke24@gmail.com',
+  userEmailSuggestion = '',
   errorMessage,
 }) => {
   const [showEmailForm, setShowEmailForm] = useState(false);
-  const [emailInput, setEmailInput] = useState(userEmailSuggestion);
+  const [authMode, setAuthMode] = useState<'signup' | 'signin'>('signup');
+  const [emailInput, setEmailInput] = useState(userEmailSuggestion || '');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [isSubmittingDirect, setIsSubmittingDirect] = useState(false);
-  const [showOAuthHelp, setShowOAuthHelp] = useState(Boolean(errorMessage));
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailInput || !onDirectSignIn) return;
-    setIsSubmittingDirect(true);
-    try {
-      await onDirectSignIn(emailInput, nameInput);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSubmittingDirect(false);
+    setLocalError(null);
+
+    if (!emailInput || !emailInput.includes('@')) {
+      setLocalError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!passwordInput || passwordInput.length < 6) {
+      setLocalError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (authMode === 'signup') {
+      if (passwordInput !== confirmPasswordInput) {
+        setLocalError('Passwords do not match. Please ensure both passwords match.');
+        return;
+      }
+      if (!onDirectSignUp) return;
+
+      setIsSubmittingDirect(true);
+      try {
+        await onDirectSignUp(emailInput, passwordInput, nameInput);
+      } catch (err: any) {
+        setLocalError(err.message || 'Failed to create account. Please try again.');
+      } finally {
+        setIsSubmittingDirect(false);
+      }
+    } else {
+      if (!onDirectSignIn) return;
+
+      setIsSubmittingDirect(true);
+      try {
+        await onDirectSignIn(emailInput, passwordInput);
+      } catch (err: any) {
+        setLocalError(err.message || 'Failed to sign in. Please verify your credentials or sign up first.');
+      } finally {
+        setIsSubmittingDirect(false);
+      }
     }
   };
 
@@ -52,6 +103,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
         {/* Primary CTA Block */}
         <div className="max-w-md mx-auto space-y-4">
+          {/* Google Sign In One-Click Override */}
           <button
             id="btn-landing-signin"
             onClick={onSignIn}
@@ -89,92 +141,220 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             )}
           </button>
 
-          {/* Email / Workspace Account Direct Sign-In Toggle */}
+          {/* Email Sign Up / Sign In Toggle */}
           <div className="text-center pt-1">
             <button
               id="btn-toggle-email-signin"
-              onClick={() => setShowEmailForm(!showEmailForm)}
+              onClick={() => {
+                setShowEmailForm(!showEmailForm);
+                setLocalError(null);
+              }}
               className="text-xs text-stone-600 hover:text-stone-900 underline underline-offset-4 inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Mail className="w-3.5 h-3.5" />
-              <span>{showEmailForm ? 'Hide email sign-in form' : 'Sign in with your email address'}</span>
+              <span>{showEmailForm ? 'Hide email authentication form' : 'Or sign up / sign in with email & password'}</span>
             </button>
           </div>
 
           {showEmailForm && (
-            <form
-              onSubmit={handleEmailSubmit}
-              className="p-5 rounded-2xl bg-white border border-stone-200/80 shadow-sm text-left space-y-3.5 animate-in fade-in slide-in-from-top-2 duration-200"
-            >
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-stone-700">Account Email</label>
-                <input
-                  id="input-account-email"
-                  type="email"
-                  required
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="your.email@gmail.com"
-                  className="w-full px-3.5 py-2 text-sm bg-stone-50 border border-stone-300 rounded-xl text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
-                />
+            <div className="p-5 rounded-2xl bg-white border border-stone-200/80 shadow-sm text-left space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* Mode Switcher Tabs */}
+              <div className="flex rounded-xl bg-stone-100 p-1">
+                <button
+                  type="button"
+                  id="tab-auth-signup"
+                  onClick={() => {
+                    setAuthMode('signup');
+                    setLocalError(null);
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    authMode === 'signup'
+                      ? 'bg-white text-stone-900 shadow-xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Sign Up (New Account)
+                </button>
+                <button
+                  type="button"
+                  id="tab-auth-signin"
+                  onClick={() => {
+                    setAuthMode('signin');
+                    setLocalError(null);
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    authMode === 'signin'
+                      ? 'bg-white text-stone-900 shadow-xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  Sign In
+                </button>
               </div>
 
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-stone-700">Display Name (Optional)</label>
-                <input
-                  id="input-account-name"
-                  type="text"
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="Your Name"
-                  className="w-full px-3.5 py-2 text-sm bg-stone-50 border border-stone-300 rounded-xl text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
-                />
-              </div>
-
-              <button
-                id="btn-submit-direct-signin"
-                type="submit"
-                disabled={isSubmittingDirect || !emailInput}
-                className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-sm rounded-xl transition shadow-xs disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-              >
-                {isSubmittingDirect ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    Sign In as {emailInput.split('@')[0] || 'User'}
-                  </>
+              <form onSubmit={handleAuthSubmit} className="space-y-3.5">
+                {authMode === 'signup' && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-stone-700">Full Name</label>
+                    <input
+                      id="input-account-name"
+                      type="text"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder="e.g. Alex Morgan"
+                      className="w-full px-3.5 py-2 text-sm bg-stone-50 border border-stone-300 rounded-xl text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                    />
+                  </div>
                 )}
-              </button>
-            </form>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-stone-700">Account Email</label>
+                  <input
+                    id="input-account-email"
+                    type="email"
+                    required
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="your.email@example.com"
+                    className="w-full px-3.5 py-2 text-sm bg-stone-50 border border-stone-300 rounded-xl text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-stone-700">Password</label>
+                    <span className="text-[11px] text-stone-400">Min. 6 chars</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="input-account-password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-3.5 pr-10 py-2 text-sm bg-stone-50 border border-stone-300 rounded-xl text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {authMode === 'signup' && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-stone-700">Confirm Password</label>
+                    <input
+                      id="input-account-confirm-password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={confirmPasswordInput}
+                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-3.5 py-2 text-sm bg-stone-50 border border-stone-300 rounded-xl text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                    />
+                  </div>
+                )}
+
+                {localError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <div className="flex-1">
+                      <span>{localError}</span>
+                      {localError.includes('sign up first') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthMode('signup');
+                            setLocalError(null);
+                          }}
+                          className="block mt-1 font-semibold text-rose-950 underline hover:no-underline cursor-pointer"
+                        >
+                          Switch to Sign Up &rarr;
+                        </button>
+                      )}
+                      {localError.includes('already exists') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthMode('signin');
+                            setLocalError(null);
+                          }}
+                          className="block mt-1 font-semibold text-rose-950 underline hover:no-underline cursor-pointer"
+                        >
+                          Switch to Sign In &rarr;
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  id="btn-submit-direct-auth"
+                  type="submit"
+                  disabled={isSubmittingDirect || !emailInput || !passwordInput}
+                  className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-sm rounded-xl transition shadow-xs disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {isSubmittingDirect ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      {authMode === 'signup' ? 'Creating Account...' : 'Signing In...'}
+                    </>
+                  ) : authMode === 'signup' ? (
+                    <>
+                      <UserPlus className="w-4 h-4" />
+                      <span>Create Account & Sign In</span>
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound className="w-4 h-4" />
+                      <span>Sign In</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="text-center pt-1 text-xs text-stone-500">
+                  {authMode === 'signup' ? (
+                    <span>
+                      Already have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode('signin');
+                          setLocalError(null);
+                        }}
+                        className="text-stone-900 font-semibold hover:underline cursor-pointer"
+                      >
+                        Sign In
+                      </button>
+                    </span>
+                  ) : (
+                    <span>
+                      Don't have an account yet?{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode('signup');
+                          setLocalError(null);
+                        }}
+                        className="text-amber-700 font-semibold hover:underline cursor-pointer"
+                      >
+                        Sign Up First
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </form>
+            </div>
           )}
-
-          {/* Expandable OAuth Help Guide */}
-          <div className="pt-2">
-            <button
-              onClick={() => setShowOAuthHelp(!showOAuthHelp)}
-              className="text-[11px] text-stone-500 hover:text-stone-700 inline-flex items-center gap-1 cursor-pointer"
-            >
-              <HelpCircle className="w-3.5 h-3.5 text-stone-400" />
-              <span>Getting "Access blocked: Authorization Error" with Google?</span>
-              {showOAuthHelp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-
-            {showOAuthHelp && (
-              <div className="mt-3 p-4 rounded-xl bg-amber-50/70 border border-amber-200 text-left text-xs text-stone-700 space-y-2">
-                <p className="font-semibold text-amber-950">How to authorize Google Sign-In for your Firebase project:</p>
-                <ol className="list-decimal list-inside space-y-1 text-stone-600">
-                  <li>Open the <strong className="text-stone-800">Firebase Console</strong> &rarr; <strong className="text-stone-800">thoughts-n-reflections</strong>.</li>
-                  <li>Go to <strong className="text-stone-800">Authentication &rarr; Settings &rarr; Authorized Domains</strong>.</li>
-                  <li>Add this application domain: <code className="bg-white px-1.5 py-0.5 rounded border border-amber-300 font-mono text-[11px] select-all">{typeof window !== 'undefined' ? window.location.hostname : 'your-app-domain.run.app'}</code>.</li>
-                  <li>Alternatively, click <strong className="text-stone-800">"Sign in with your email address"</strong> above for immediate instant access!</li>
-                </ol>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

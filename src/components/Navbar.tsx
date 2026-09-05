@@ -1,7 +1,6 @@
 import React from 'react';
-import { Sparkles, Shield, LogOut, Database, UserCheck, TrendingUp } from 'lucide-react';
+import { Sparkles, Shield, LogOut, UserCheck, TrendingUp } from 'lucide-react';
 import type { UserProfile } from '../types';
-import { isFirebaseConfigured } from '../services/firebase';
 
 interface NavbarProps {
   user: UserProfile | null;
@@ -30,19 +29,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
           <div>
             <span className="font-serif font-semibold text-lg text-stone-900 tracking-tight">
-              Reflection Journal
+              Thoughts and Reflections
             </span>
-            <div className="flex items-center space-x-2 text-xs text-stone-500">
-              <span className="inline-flex items-center gap-1 font-medium text-amber-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Gemini 3.6 Flash
-              </span>
-              <span>•</span>
-              <span className="inline-flex items-center gap-1">
-                <Database className="w-3 h-3 text-stone-400" />
-                {isFirebaseConfigured ? 'Firestore Active' : 'Local Isolated State'}
-              </span>
-            </div>
+            <p className="text-xs text-stone-500">
+              Mindful companion & insights
+            </p>
           </div>
         </div>
 
