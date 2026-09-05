@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account document containing role state with anti-self-elevation protection",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "user"],
+          "description": "User authorization role resolved server-side"
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "role"]
+    },
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "A user's private reflection and multi-turn Gemini conversation session",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the entry"
+        },
+        "userId": {
+          "type": "string",
+          "description": "The Firebase Auth UID of the user who owns this document"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title or headline of the reflection"
+        },
+        "topic": {
+          "type": "string",
+          "description": "Category or topic of reflection"
+        },
+        "turns": {
+          "type": "array",
+          "description": "Multi-turn exchange of user prompts and Gemini responses"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Gemini-generated summary of insights"
+        },
+        "keyThemes": {
+          "type": "array",
+          "description": "Extracted themes from the reflection"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation ISO timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last updated ISO timestamp"
+        },
+        "location": {
+          "type": "object",
+          "description": "Optional location coordinates and geographical label attached with explicit user consent",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "name": { "type": "string" },
+            "accuracy": { "type": "number" }
+          }
+        },
+        "moderation": {
+          "type": "object",
+          "description": "Administrative moderation flags and notes",
+          "properties": {
+            "isFlagged": { "type": "boolean" },
+            "moderationStatus": { "type": "string", "enum": ["approved", "flagged", "under_review"] },
+            "moderationNote": { "type": "string" },
+            "moderatedAt": { "type": "string", "format": "date-time" },
+            "moderatedBy": { "type": "string" }
+          }
+        }
+      },
+      "required": ["id", "userId", "title", "createdAt", "updatedAt", "turns"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Immutable log entry recording who, what, before/after state, and timestamp for all admin operations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "performedBy": {
+          "type": "object",
+          "properties": {
+            "uid": { "type": "string" },
+            "email": { "type": "string" }
+          },
+          "required": ["uid"]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "userId": { "type": "string" },
+            "entryId": { "type": "string" },
+            "title": { "type": "string" }
+          }
+        },
+        "beforeState": { "type": "object" },
+        "afterState": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" }
+      },
+      "required": ["id", "action", "performedBy", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile document with role management and anti-self-elevation"
+    },
+    "/users/{userId}/entries/{entryId}": {
+      "schema": "JournalEntry",
+      "description": "User-isolated collection storing all personal journal entries and Gemini dialogues"
+    },
+    "/users/{userId}/interactions/{interactionId}": {
+      "schema": "JournalEntry",
+      "description": "User-isolated interaction records matching challenge directives"
+    },
+    "/adminAuditLog/{logId}": {
+      "schema": "AdminAuditLog",
+      "description": "Immutable administrative audit log records written exclusively by backend Admin SDK"
+    }
+  }
+}
