@@ -10,18 +10,16 @@ import { JournalEditor } from './components/JournalEditor';
 import { EntryHistory } from './components/EntryHistory';
 import { MoodTrendDashboard } from './components/MoodTrendDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
-import { SecurityDrawer } from './components/SecurityDrawer';
 import { SharedEntryView } from './components/SharedEntryView';
 import {
   subscribeToAuth,
   signInWithGoogle,
+  signInWithDirectEmail,
   logOut,
   fetchUserEntries,
   deleteUserEntry,
-  isFirebaseConfigured,
 } from './services/firebase';
 import type { JournalEntry, UserProfile } from './types';
-import { ShieldCheck, Info } from 'lucide-react';
 
 function createNewEntry(userId: string): JournalEntry {
   const now = new Date();
@@ -47,9 +45,9 @@ export default function App() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [activeEntry, setActiveEntry] = useState<JournalEntry | null>(null);
   const [activeView, setActiveView] = useState<'editor' | 'history' | 'trends' | 'admin'>('editor');
-  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
-  // Expiring Share Link Routing (Directive 11: Zero-account public viewing)
+  // Expiring Share Link Routing
   const [shareToken, setShareToken] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     const urlParams = new URLSearchParams(window.location.search);
@@ -113,12 +111,28 @@ export default function App() {
   }, [user?.uid]);
 
   const handleSignIn = async () => {
+    setSignInError(null);
     setIsSigningIn(true);
     try {
       const loggedUser = await signInWithGoogle();
       setUser(loggedUser);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Sign in error:', err);
+      setSignInError(err.message || 'Failed to complete Google sign-in. Please try again or use direct email sign-in.');
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleDirectSignIn = async (email: string, name?: string) => {
+    setSignInError(null);
+    setIsSigningIn(true);
+    try {
+      const loggedUser = await signInWithDirectEmail(email, name);
+      setUser(loggedUser);
+    } catch (err: any) {
+      console.error('Direct sign-in error:', err);
+      setSignInError(err.message || 'Failed to sign in. Please check email and try again.');
     } finally {
       setIsSigningIn(false);
     }
@@ -195,21 +209,15 @@ export default function App() {
         entriesCount={entries.length}
       />
 
-      {/* Cloud Firestore configuration notice (if running with client-side fallback) */}
-      {!isFirebaseConfigured && (
-        <div className="bg-amber-50 border-b border-amber-200/80 px-4 py-2 text-xs text-amber-900 flex items-center justify-between">
+      {signInError && (
+        <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 text-xs text-rose-800 flex items-center justify-between">
           <div className="max-w-6xl mx-auto w-full flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Info className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-              <span>
-                <strong>Zero-Configuration Preview Mode:</strong> Storing reflections locally with user-isolated state. Connect your Firebase credentials in <code className="bg-amber-100 px-1 py-0.5 rounded">.env</code> anytime for live Cloud Firestore syncing.
-              </span>
-            </div>
+            <span>{signInError}</span>
             <button
-              onClick={() => setIsSecurityModalOpen(true)}
-              className="text-amber-950 underline hover:text-amber-800 whitespace-nowrap text-[11px] font-medium"
+              onClick={() => setSignInError(null)}
+              className="text-rose-950 font-semibold hover:underline"
             >
-              View Security Specs
+              Dismiss
             </button>
           </div>
         </div>
@@ -222,7 +230,12 @@ export default function App() {
             <div className="w-8 h-8 border-2 border-stone-300 border-t-amber-600 rounded-full animate-spin" />
           </div>
         ) : !user ? (
-          <LandingPage onSignIn={handleSignIn} isLoading={isSigningIn} />
+          <LandingPage
+            onSignIn={handleSignIn}
+            onDirectSignIn={handleDirectSignIn}
+            isLoading={isSigningIn}
+            errorMessage={signInError}
+          />
         ) : activeView === 'admin' && user.role === 'admin' ? (
           <AdminDashboard
             user={user}
@@ -260,29 +273,16 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="font-serif font-medium text-stone-800">Reflection Journal</span>
             <span>•</span>
-            <span>Encrypted in transit & at rest</span>
+            <span>Private & Encrypted</span>
             <span>•</span>
-            <span>Gemini 3.6 Flash</span>
+            <span>Mindful AI Companion</span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <button
-              id="btn-footer-security"
-              onClick={() => setIsSecurityModalOpen(true)}
-              className="inline-flex items-center gap-1.5 text-stone-600 hover:text-stone-900 font-medium transition"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              Security Architecture & Threat Model
-            </button>
+          <div className="text-stone-400 text-[11px]">
+            Personal reflective journal & mood intelligence
           </div>
         </div>
       </footer>
-
-      {/* Security Specs Drawer */}
-      <SecurityDrawer
-        isOpen={isSecurityModalOpen}
-        onClose={() => setIsSecurityModalOpen(false)}
-      />
     </div>
   );
 }

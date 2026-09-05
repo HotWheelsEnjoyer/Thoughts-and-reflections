@@ -95,7 +95,7 @@ export const MoodTrendDashboard: React.FC<MoodTrendDashboardProps> = ({
   const [timeframe, setTimeframe] = useState<'all' | '30d' | '7d'>('all');
   const [selectedTopic, setSelectedTopic] = useState<string>('All');
 
-  // Directive 12: Strict Per-User Scoping (request.auth.uid == userId)
+  // Strict Per-User Scoping (request.auth.uid == userId)
   // Ensures ONLY this authenticated user's entries are ever queried or aggregated.
   const userScoredEntries = useMemo(() => {
     const now = Date.now();
@@ -292,11 +292,11 @@ export const MoodTrendDashboard: React.FC<MoodTrendDashboardProps> = ({
         </div>
       </div>
 
-      {/* Security Directive 12 Notice */}
+      {/* Privacy and Isolation Notice */}
       <div className="mb-6 p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 flex items-start gap-2.5">
         <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
         <div className="flex-1 leading-relaxed">
-          <strong>Directive 12 Isolation Guarantee:</strong> Sentiment metadata is validated server-side against a constrained schema (bounded numeric score <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">-1.0 to +1.0</code>). All trend queries are strictly scoped to <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">request.auth.uid == "{user.uid}"</code>. No cross-user aggregates or leaderboards are ever generated.
+          <strong>Privacy & Isolation Guarantee:</strong> Sentiment metadata is analyzed and strictly scoped to your private authenticated profile. No cross-user aggregates, shared leaderboards, or public metrics are ever generated.
         </div>
       </div>
 

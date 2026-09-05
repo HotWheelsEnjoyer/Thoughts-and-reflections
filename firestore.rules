@@ -6,13 +6,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // DIRECTIVE 9: Server-Side Role Helper
+    // Server-Side Role Helper (Authoritative Admin Validation)
     function isAdmin() {
       return request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // DIRECTIVE 9: User Profiles with Anti-Self-Elevation
+    // User Profiles with Anti-Self-Elevation Protection
     match /users/{userId} {
       allow read: if request.auth != null &&
         (request.auth.uid == userId || isAdmin());
@@ -26,20 +26,20 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // DIRECTIVE 9: Immutable Admin Audit Log (written only by backend Admin SDK)
+    // Immutable Admin Audit Log (written only by backend Admin SDK)
     match /adminAuditLog/{logId} {
       allow read: if isAdmin();
       allow write: if false; // written only by Admin SDK on the backend, which bypasses rules
     }
 
-    // DIRECTIVE 11: Expiring Shareable Read Links
+    // Expiring Shareable Read Links
     // Backend-only access via Admin SDK, never exposed to any client
     match /shareLinks/{token} {
       allow read, write: if false;
     }
 
 
-    // User Data Isolation, Admin Moderation & Mood Score Validation (Directives 8, 9, 11 & 12)
+    // User Data Isolation, Admin Moderation, Location & Mood Score Validation
     match /users/{userId}/entries/{entryId} {
       allow create: if request.auth != null && request.auth.uid == userId
         && (!("location" in request.resource.data) ||

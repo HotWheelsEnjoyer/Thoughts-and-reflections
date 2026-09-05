@@ -60,7 +60,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
   // Anti-self-elevation test state
   const [selfElevationError, setSelfElevationError] = useState<string | null>(null);
 
-  // Directive 10: Webhook & Notification diagnostics state
+  // Webhook & Notification diagnostics state
   const [testWebhookUrl, setTestWebhookUrl] = useState('https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX');
   const [validationResult, setValidationResult] = useState<{
     valid?: boolean;
@@ -201,7 +201,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
     }
   };
 
-  // Directive 10: Validate Webhook URL via backend SSRF guard
+  // Validate Webhook URL via backend SSRF guard
   const handleValidateWebhook = async (urlToTest?: string) => {
     const targetUrl = urlToTest || testWebhookUrl;
     if (urlToTest) setTestWebhookUrl(urlToTest);
@@ -221,7 +221,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
     }
   };
 
-  // Directive 10: Test dispatch of crisis notification alert
+  // Test dispatch of crisis notification alert
   const handleTriggerTestAlert = async () => {
     setIsTestDispatching(true);
     setTestDispatchMsg(null);
@@ -298,7 +298,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
             <div className="flex items-center gap-2 mb-1">
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-200">
                 <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
-                Directive 9 — Admin RBAC System
+                Admin RBAC System
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
@@ -419,7 +419,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
           }`}
         >
           <Bell className="w-3.5 h-3.5" />
-          Slack & SSRF Guard (Directive 10)
+          Slack & SSRF Guard
         </button>
       </div>
 
@@ -665,7 +665,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
                 Immutable Governance Audit Trail
               </h2>
               <p className="text-stone-500 text-xs mt-0.5">
-                Directive 9 mandates that all administrative actions write immutable log entries recording who, what, before/after states, and timestamps.
+                All administrative actions write immutable log entries recording who, what, before/after states, and timestamps.
               </p>
             </div>
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
@@ -749,50 +749,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
         </div>
       )}
 
-      {/* TAB 3: RBAC ARCHITECTURE & ANTI-SELF-ELEVATION */}
+      {/* TAB 3: RBAC & ROLE MANAGEMENT */}
       {activeTab === 'rbac' && (
         <div className="space-y-6">
-          {/* Directive 9 Overview */}
+          {/* RBAC Overview */}
           <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
             <h2 className="font-serif text-lg font-bold text-stone-900 mb-2">
-              Directive 9 (Admin RBAC) Architecture Verification
+              Role-Based Access Control
             </h2>
             <div className="space-y-3 text-xs text-stone-700">
               <div className="p-3 bg-stone-50 rounded-xl border border-stone-200">
-                <p className="font-semibold text-stone-900">1. Server-Side Role Resolution (Never Trust Client Roles)</p>
+                <p className="font-semibold text-stone-900">1. Authoritative Role Verification</p>
                 <p className="text-stone-600 mt-0.5">
-                  Client-asserted <code>role</code> or <code>isAdmin</code> in request bodies or localStorage is completely ignored. Role is resolved strictly on the backend by <code>resolveAuthoritativeRole()</code> on every endpoint call.
+                  Administrative permissions are verified securely on every request. Client-side assertions are never trusted directly.
                 </p>
               </div>
 
               <div className="p-3 bg-stone-50 rounded-xl border border-stone-200">
-                <p className="font-semibold text-stone-900">2. Defense-in-Depth Middleware</p>
+                <p className="font-semibold text-stone-900">2. Protected Endpoints</p>
                 <p className="text-stone-600 mt-0.5">
-                  Admin routes (<code>/api/admin/entries</code>, <code>/api/admin/moderate-entry</code>, <code>/api/admin/entry</code>, <code>/api/admin/audit-logs</code>, <code>/api/admin/change-user-role</code>) enforce <code>requireAdminRole</code> on the backend regardless of UI state.
+                  All administrative actions (content moderation, deletion, audit retrieval, and role modifications) require verified credentials.
                 </p>
               </div>
 
               <div className="p-3 bg-stone-50 rounded-xl border border-stone-200">
-                <p className="font-semibold text-stone-900">3. Anti-Self-Elevation Rule in Firestore Rules</p>
+                <p className="font-semibold text-stone-900">3. Anti-Self-Elevation Protection</p>
                 <p className="text-stone-600 mt-0.5">
-                  Enforced at the database engine level in <code>firestore.rules</code>:
-                  <code className="block bg-stone-900 text-stone-100 p-2 rounded-md mt-1 font-mono text-[11px]">
-                    allow update: if request.auth != null && request.auth.uid == userId
-                    && request.resource.data.role == resource.data.role;
-                  </code>
-                  And enforced on backend endpoints with 403 rejection if <code>targetUserId === admin.uid</code>.
+                  Security policies prevent an administrator from modifying their own role status or bypassing governance controls.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Interactive Anti-Self-Elevation Demonstration */}
+          {/* Interactive Anti-Self-Elevation Verification */}
           <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
             <h3 className="font-serif text-base font-bold text-stone-900 mb-1">
-              Live Test: Anti-Self-Elevation Enforcement
+              Verify Anti-Self-Elevation Guard
             </h3>
             <p className="text-stone-600 text-xs mb-4">
-              Click the button below to attempt a self-elevation / self-role change. The backend will actively intercept the request and reject it with a 403 Forbidden error according to Directive 9.
+              Test the security policy by triggering an attempt to modify your own active role. The request will be intercepted and rejected with a forbidden response.
             </p>
 
             <button
@@ -800,247 +795,88 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
               onClick={handleTestSelfElevation}
               className="px-4 py-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold rounded-xl hover:bg-rose-100 transition"
             >
-              Simulate Self-Role Modification Attack
+              Test Anti-Self-Elevation Guard
             </button>
 
             {selfElevationError && (
               <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900">
-                <span className="font-bold">Defense Triggered:</span> {selfElevationError}
+                <span className="font-bold">Security Protection:</span> {selfElevationError}
               </div>
             )}
           </div>
 
-          {/* Simulated User Accounts for Role Management Testing */}
+          {/* User Role Registry & Management */}
           <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
             <h3 className="font-serif text-base font-bold text-stone-900 mb-1">
-              User Role Registry (Authorized Admin Control)
+              User Role Management
             </h3>
             <p className="text-stone-600 text-xs mb-4">
-              Admins can grant or revoke roles for other users. Every change is logged with before/after state to the audit trail.
+              Manage roles for active registered users. All role transitions are recorded in the append-only audit trail.
             </p>
 
-            <div className="space-y-3">
-              {[
-                { uid: 'user_alex_392', email: 'alex.rivera@example.com', role: 'user' as UserRole },
-                { uid: 'user_sam_817', email: 'sam.taylor@example.com', role: 'user' as UserRole },
-              ].map((u) => (
-                <div
-                  key={u.uid}
-                  className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs"
-                >
-                  <div>
-                    <p className="font-semibold text-stone-900">{u.email}</p>
-                    <p className="text-stone-500 font-mono text-[10px]">UID: {u.uid}</p>
-                  </div>
-                  <button
-                    onClick={() => handleToggleUserRole(u.uid, u.role)}
-                    className="px-3 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 font-medium rounded-lg transition"
-                  >
-                    Promote to Admin (Test Audit Log)
-                  </button>
-                </div>
-              ))}
-            </div>
+            {entries.length > 0 ? (
+              <div className="space-y-3">
+                {Array.from(new Set(entries.map((e) => e.userId))).map((userId) => {
+                  const entry = entries.find((e) => e.userId === userId);
+                  const isCurrentAdmin = userId === user.uid;
+                  return (
+                    <div
+                      key={userId}
+                      className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs"
+                    >
+                      <div>
+                        <p className="font-semibold text-stone-900">{entry?.userEmail || userId}</p>
+                        <p className="text-stone-500 font-mono text-[10px]">User ID: {userId}</p>
+                      </div>
+                      {isCurrentAdmin ? (
+                        <span className="px-3 py-1.5 bg-amber-100 text-amber-900 font-semibold rounded-lg text-xs">
+                          Current Active Admin
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleUserRole(userId, 'user')}
+                          className="px-3 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 font-medium rounded-lg transition"
+                        >
+                          Toggle Role Status
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-stone-500 text-xs italic">
+                No active user accounts found in the database yet. When users create entries, their accounts will be manageable here.
+              </p>
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 4: WEBHOOK NOTIFICATIONS & SSRF GUARD (DIRECTIVE 10) */}
+      {/* TAB 4: WEBHOOK NOTIFICATIONS & SSRF GUARD */}
       {activeTab === 'webhooks' && (
         <div className="space-y-6">
-          {/* Directive 10 Threat Summary Table */}
-          <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-900 border border-rose-200">
-                    <ShieldAlert className="w-3.5 h-3.5 text-rose-700" />
-                    Directive 10 — Threat Summary
-                  </span>
-                  <span className="text-xs text-stone-500 font-medium">
-                    External Notification Security & SSRF Hardening
-                  </span>
-                </div>
-                <h2 className="font-serif text-lg font-bold text-stone-900 mt-1">
-                  Threat Matrix: Slack / Discord / Webhook Pipeline
-                </h2>
-              </div>
-              <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg">
-                Active Enforcements: 5/5
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-stone-200 text-stone-500 bg-stone-50/50">
-                    <th className="py-2.5 px-3 font-semibold">Threat & Attack Vector</th>
-                    <th className="py-2.5 px-3 font-semibold">Target / Risk</th>
-                    <th className="py-2.5 px-3 font-semibold">Severity</th>
-                    <th className="py-2.5 px-3 font-semibold">Directive 10 Mitigation Architecture</th>
-                    <th className="py-2.5 px-3 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  <tr className="hover:bg-stone-50/50">
-                    <td className="py-3 px-3 font-medium text-stone-900">
-                      Outbound SSRF & Cloud Metadata Theft
-                    </td>
-                    <td className="py-3 px-3 text-stone-600">
-                      User-supplied webhook URLs targeting <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">169.254.169.254</code> (Cloud Run / GCE instance credentials) or internal VPC services
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                        CRITICAL
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-stone-700">
-                      Backend DNS resolution with IPv4/IPv6 CIDR check (<code className="bg-stone-100 px-1 py-0.5 rounded font-mono">isPrivateOrRestrictedIp</code>) blocking loopback, link-local metadata, carrier NAT, and private subnets before outbound request.
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Enforced
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-stone-50/50">
-                    <td className="py-3 px-3 font-medium text-stone-900">
-                      Disallowed Host Redirection
-                    </td>
-                    <td className="py-3 px-3 text-stone-600">
-                      Attackers registering webhooks to rogue domains for credential sniffing or port scanning
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                        HIGH
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-stone-700">
-                      Strict host allowlist checking (<code className="bg-stone-100 px-1 py-0.5 rounded font-mono">hooks.slack.com</code>, <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">discord.com</code>, <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">discordapp.com</code>). All other destinations rejected immediately.
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Enforced
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-stone-50/50">
-                    <td className="py-3 px-3 font-medium text-stone-900">
-                      Secret Webhook Credential Leakage
-                    </td>
-                    <td className="py-3 px-3 text-stone-600">
-                      Webhook tokens exposed in client bundles or saved into publicly readable Firestore docs
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                        CRITICAL
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-stone-700">
-                      Org webhook loaded strictly server-side via <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">access_secret()</code> (Secret Manager / backend environment). Masked destination hashes displayed in client.
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Enforced
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-stone-50/50">
-                    <td className="py-3 px-3 font-medium text-stone-900">
-                      Ping & Channel Mention Injection
-                    </td>
-                    <td className="py-3 px-3 text-stone-600">
-                      User injecting <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">@everyone</code>, <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">&lt;!channel&gt;</code>, or raw links into journal content to trigger mass notifications in coaching channels
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                        MEDIUM
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-stone-700">
-                      Server-side sanitizer disarms broadcast mentions (<code className="bg-stone-100 px-1 py-0.5 rounded font-mono">@ everyone</code>) and escapes Slack mrkdwn brackets (<code className="bg-stone-100 px-1 py-0.5 rounded font-mono">&lt;</code> and <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">&gt;</code>).
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Enforced
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-stone-50/50">
-                    <td className="py-3 px-3 font-medium text-stone-900">
-                      Notification Flooding & Webhook Exhaustion
-                    </td>
-                    <td className="py-3 px-3 text-stone-600">
-                      Scripted rapid generation of crisis entries consuming provider quotas or spamming triage staff
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                        MEDIUM
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-stone-700">
-                      Per-user sliding token bucket rate limiter (Max 5 notifications per 10 minutes per user). Throttled attempts log warnings without triggering HTTP 429 cascades.
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Enforced
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-stone-50/50">
-                    <td className="py-3 px-3 font-medium text-stone-900">
-                      Duplicate Webhook Dispatches on Retries
-                    </td>
-                    <td className="py-3 px-3 text-stone-600">
-                      Network retries or re-saves generating multiple identical Slack notifications for a single reflection
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
-                        LOW
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-stone-700">
-                      Server-side Idempotency Cache: Dispatches generate a unique revision hash key (<code className="bg-stone-100 px-1 py-0.5 rounded font-mono">slack_entryId_turnCount</code>). Repeated requests return the cached response without re-POSTing.
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Enforced
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           {/* Org Webhook Config Status & Dispatch Test Control */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
               <h3 className="font-serif text-base font-bold text-stone-900 mb-1 flex items-center gap-2">
                 <Bell className="w-4 h-4 text-stone-700" />
-                Organization Webhook Pipeline Status
+                Notification Pipeline Status
               </h3>
               <p className="text-stone-600 text-xs mb-4">
-                Configured secrets and outbound throttling parameters according to Directive 10.
+                Configured webhooks and outgoing alert settings.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/60">
-                  <p className="text-[11px] text-stone-500 font-medium">Org Webhook Secret Status</p>
+                  <p className="text-[11px] text-stone-500 font-medium">Webhook Endpoint</p>
                   <div className="flex items-center gap-1.5 mt-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span className="font-mono text-xs font-semibold text-stone-900">
-                      {configStatus?.destinationMask || 'hooks.slack.com/services/ORG_...'}
+                      {configStatus?.destinationMask || 'hooks.slack.com/...'}
                     </span>
                   </div>
-                  <p className="text-[10px] text-stone-500 mt-1">
-                    Retrieved securely via <code className="bg-stone-200/60 px-1 rounded">process.env.SLACK_WEBHOOK_URL</code>
-                  </p>
+                  <p className="text-[10px] text-stone-500 mt-1">Configured securely on server</p>
                 </div>
 
                 <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/60">
@@ -1048,7 +884,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
                   <p className="text-xs font-semibold text-stone-900 mt-1">
                     {configStatus?.maxPerWindow || 5} dispatches / {configStatus?.windowMinutes || 10} minutes
                   </p>
-                  <p className="text-[10px] text-stone-500 mt-1">Token bucket per user ID</p>
+                  <p className="text-[10px] text-stone-500 mt-1">Per-user sliding window</p>
                 </div>
 
                 <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/60">
@@ -1074,9 +910,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
               {/* Action: Trigger Crisis Notification Test */}
               <div className="pt-3 border-t border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold text-stone-900">End-to-End Alert Dispatch Test</p>
+                  <p className="text-xs font-semibold text-stone-900">Alert Dispatch Test</p>
                   <p className="text-[11px] text-stone-500">
-                    Sends a sanitized <code className="bg-stone-100 px-1 rounded">crisis_support</code> payload through the rate limiter & idempotency engine.
+                    Dispatches a test notification through the outbound pipeline and rate limiter.
                   </p>
                 </div>
                 <button
@@ -1086,7 +922,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
                   className="inline-flex items-center gap-1.5 px-3 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-medium transition shrink-0 disabled:opacity-50"
                 >
                   <Zap className={`w-3.5 h-3.5 text-amber-400 ${isTestDispatching ? 'animate-spin' : ''}`} />
-                  <span>{isTestDispatching ? 'Dispatching...' : 'Trigger Test Slack Alert'}</span>
+                  <span>{isTestDispatching ? 'Dispatching...' : 'Trigger Test Alert'}</span>
                 </button>
               </div>
 
@@ -1113,48 +949,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
               )}
             </div>
 
-            {/* Side Card: Idempotency & Protection Architecture */}
+            {/* Side Card: Pipeline Guarantees */}
             <div className="bg-stone-50 border border-stone-200 rounded-2xl p-5 text-xs text-stone-700 flex flex-col justify-between">
               <div>
                 <h4 className="font-serif font-bold text-stone-900 mb-2 flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Protection Guarantees
+                  Pipeline Guarantees
                 </h4>
                 <ul className="space-y-2 text-[11px]">
                   <li className="flex items-start gap-1.5">
                     <span className="text-emerald-600 font-bold">•</span>
-                    <span><strong>DNS Pinning & Private IP Guard:</strong> Prevents DNS rebinding and loopback SSRF.</span>
+                    <span><strong>Private IP Protection:</strong> Blocks internal network and private IP destinations.</span>
                   </li>
                   <li className="flex items-start gap-1.5">
                     <span className="text-emerald-600 font-bold">•</span>
-                    <span><strong>Cloud Metadata Defense:</strong> Rejects 169.254.169.254, protecting container identity.</span>
+                    <span><strong>Host Allowlisting:</strong> Restricts destinations strictly to authorized webhook services.</span>
                   </li>
                   <li className="flex items-start gap-1.5">
                     <span className="text-emerald-600 font-bold">•</span>
-                    <span><strong>Anti-Ping Sanitization:</strong> Replaces @everyone, @here, & disarms markdown link brackets.</span>
+                    <span><strong>Content Sanitization:</strong> Automatically filters broadcast mention keywords.</span>
                   </li>
                   <li className="flex items-start gap-1.5">
                     <span className="text-emerald-600 font-bold">•</span>
-                    <span><strong>Idempotency Memory:</strong> Prevents duplicate alerts if user re-saves an entry.</span>
+                    <span><strong>Idempotency Checking:</strong> Prevents duplicate alerts for identical entries.</span>
                   </li>
                 </ul>
-              </div>
-
-              <div className="mt-4 p-2.5 bg-white rounded-xl border border-stone-200/80 text-[10px] text-stone-500 font-mono">
-                Trigger Type: <span className="text-rose-700 font-bold">crisis_support</span><br />
-                Idempotency Format: <span className="text-stone-700">slack_[entry_id]_[turns]</span>
               </div>
             </div>
           </div>
 
-          {/* Interactive SSRF & Webhook URL Inspector */}
+          {/* Interactive Webhook Destination Inspector */}
           <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
             <h3 className="font-serif text-base font-bold text-stone-900 mb-1 flex items-center gap-2">
               <Globe className="w-4 h-4 text-stone-700" />
-              Directive 10 SSRF Validator & Private-IP Inspector
+              Webhook Destination Inspector
             </h3>
             <p className="text-stone-600 text-xs mb-4">
-              Test any custom or user-supplied webhook destination against the backend SSRF filter. Verify that private IP ranges, cloud metadata endpoints, and untrusted domains are strictly rejected.
+              Validate destination URLs against domain allowlists and network security policies.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-2 mb-3">
@@ -1177,47 +1008,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
               </button>
             </div>
 
-            {/* Quick Test Vectors */}
-            <div className="flex flex-wrap items-center gap-1.5 mb-4 text-xs">
-              <span className="text-[11px] font-medium text-stone-500 mr-1">One-Click Test Vectors:</span>
-              <button
-                onClick={() => handleValidateWebhook('http://169.254.169.254/computeMetadata/v1/')}
-                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg text-[11px] font-mono transition"
-                title="Tests GCP/AWS Cloud Instance Metadata SSRF attack vector"
-              >
-                🚨 Metadata SSRF (169.254.169.254)
-              </button>
-              <button
-                onClick={() => handleValidateWebhook('http://127.0.0.1:3000/internal-secrets')}
-                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg text-[11px] font-mono transition"
-                title="Tests Loopback IP attack vector"
-              >
-                🛑 Loopback (127.0.0.1)
-              </button>
-              <button
-                onClick={() => handleValidateWebhook('http://192.168.1.1/admin-console')}
-                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg text-[11px] font-mono transition"
-                title="Tests RFC1918 Private LAN attack vector"
-              >
-                🛑 Private LAN (192.168.1.1)
-              </button>
-              <button
-                onClick={() => handleValidateWebhook('https://evil-attacker.com/webhook')}
-                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[11px] font-mono transition"
-                title="Tests Disallowed External Host vector"
-              >
-                ⚠️ Disallowed Domain (evil-attacker.com)
-              </button>
-              <button
-                onClick={() => handleValidateWebhook('https://hooks.slack.com/services/T00000000/B00000000/VALID_SECRET_KEY')}
-                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-mono transition"
-                title="Tests Valid Slack incoming webhook URL"
-              >
-                ✅ Valid Slack URL
-              </button>
-            </div>
-
-            {/* Validation Result Inspection Card */}
+            {/* Validation Result Card */}
             {validationResult && (
               <div
                 className={`p-4 rounded-xl border text-xs ${
@@ -1234,14 +1025,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onRefreshE
                   )}
                   <div className="flex-1">
                     <p className="font-bold text-sm">
-                      {validationResult.valid ? 'SSRF Validation Passed: Safe for Outbound Webhook' : 'SSRF Validation Blocked: Prohibited Destination'}
+                      {validationResult.valid ? 'Destination Verified: Safe for Outbound Webhook' : 'Destination Rejected: Disallowed Destination'}
                     </p>
                     <p className="mt-1 text-xs opacity-90">
-                      {validationResult.error || 'Destination verified against domain allowlist and resolved to a legitimate public IP address.'}
+                      {validationResult.error || 'Destination verified against domain allowlist and resolved to a valid public IP.'}
                     </p>
                     {validationResult.resolvedIp && (
                       <div className="mt-2 font-mono text-[11px] bg-white/70 p-2 rounded-lg border border-black/5">
-                        <span>DNS Resolved IP: </span>
+                        <span>Resolved IP: </span>
                         <strong className="text-stone-900">{validationResult.resolvedIp}</strong>
                         {validationResult.sanitizedDestination && (
                           <span className="ml-3 text-stone-600">Mask: {validationResult.sanitizedDestination}</span>

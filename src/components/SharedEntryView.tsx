@@ -262,12 +262,12 @@ export function SharedEntryView({ token, onReturnToApp }: SharedEntryViewProps) 
                 </span>
               </div>
 
-              {/* Directive 11 Field Minimization Indicator */}
+              {/* Field Minimization Indicator */}
               <div className="flex items-center gap-2 text-stone-500">
                 <Lock className="w-3.5 h-3.5 text-amber-700" />
                 <span className="text-[11px]">
                   {entry.locationStripped || entry.moodStripped
-                    ? 'Sensitive telemetry stripped by default (Directive 11)'
+                    ? 'Sensitive telemetry stripped by default'
                     : 'Field minimization verified'}
                 </span>
               </div>
@@ -385,7 +385,7 @@ export function SharedEntryView({ token, onReturnToApp }: SharedEntryViewProps) 
             <div className="p-4 rounded-xl border border-stone-200 bg-stone-50/80 text-center text-xs text-stone-500 space-y-1">
               <div className="flex items-center justify-center gap-1.5 text-stone-700 font-medium">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Sanitized Read-Only Mode (Directive 11)</span>
+                <span>Sanitized Read-Only Mode</span>
               </div>
               <p className="text-stone-400 text-[11px]">
                 This view is rendered server-side via the Admin SDK with strict expiration checks. No modifications can be made to this reflection.

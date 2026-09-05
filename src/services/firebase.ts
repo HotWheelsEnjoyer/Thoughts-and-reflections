@@ -21,15 +21,19 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import type { JournalEntry, UserProfile, AuditLogEntry, UserRole } from '../types';
+import appletConfig from '../../firebase-applet-config.json';
 
-// Load config from environment variables (Zero-Hardcoding Hygiene)
+// Load config from environment variables or provisioned applet configuration
+const configJson: Record<string, string> = appletConfig || {};
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || configJson.apiKey || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || configJson.authDomain || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || configJson.projectId || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || configJson.storageBucket || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || configJson.messagingSenderId || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || configJson.appId || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || configJson.measurementId || '',
 };
 
 export const isFirebaseConfigured = Boolean(
@@ -77,7 +81,7 @@ export function sanitizePayloadForFirestore<T>(payload: T): T {
   );
 }
 
-// DIRECTIVE 9: Authoritative Server-Side Role Resolver
+// Authoritative Server-Side Role Resolver
 export async function resolveServerRole(uid: string, email?: string | null): Promise<UserRole> {
   try {
     const res = await fetch('/api/admin/check-role', {
@@ -96,86 +100,249 @@ export async function resolveServerRole(uid: string, email?: string | null): Pro
   return 'user';
 }
 
-// Google Sign-In
+// Active Auth state listeners
+const authListeners = new Set<(user: UserProfile | null) => void>();
+let currentActiveUser: UserProfile | null = null;
+
+function notifyAuthSubscribers(user: UserProfile | null) {
+  currentActiveUser = user;
+  authListeners.forEach((callback) => {
+    try {
+      callback(user);
+    } catch (e) {
+      console.error('[Auth Listener Error]', e);
+    }
+  });
+}
+
+// Google Sign-In (Authentic Google Authentication via Firebase Auth or Google Identity Services)
 export async function signInWithGoogle(): Promise<UserProfile> {
+  // 1. If Firebase Auth is configured and active, use Firebase Google Auth Provider
   if (auth && isFirebaseConfigured) {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-    const role = await resolveServerRole(user.uid, user.email);
-    return {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName || 'Journaler',
-      photoURL: user.photoURL,
-      role,
-      isMock: false,
-    };
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      const role = await resolveServerRole(user.uid, user.email);
+      const profile: UserProfile = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || user.email?.split('@')[0] || 'User',
+        photoURL: user.photoURL,
+        role,
+      };
+      notifyAuthSubscribers(profile);
+      return profile;
+    } catch (firebaseErr: any) {
+      if (firebaseErr.code === 'auth/popup-closed-by-user') {
+        throw new Error('Sign-in cancelled: Google popup was closed before completing authentication.');
+      }
+      console.warn('Firebase Google Auth popup error, falling back to Google Identity Services:', firebaseErr);
+    }
   }
 
-  // Graceful Fallback if user hasn't added Firebase config in .env yet
-  const mockUid = 'demo_user_google_id_91779';
-  const mockEmail = 'nimalanke24@gmail.com';
-  const role = await resolveServerRole(mockUid, mockEmail);
-  const mockUser: UserProfile = {
-    uid: mockUid,
-    email: mockEmail,
-    displayName: 'Nimalan K.',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-    role: role || 'admin',
-    isMock: true,
+  // 2. Google Identity Services (GSI) Client-Side OAuth Protocol
+  return new Promise<UserProfile>((resolve, reject) => {
+    const gsi = (window as any).google?.accounts?.oauth2;
+    if (gsi) {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || configJson.oAuthClientId || '750034257375-k54uoh10esgk94r2d42hbnbc9grbjkd0.apps.googleusercontent.com';
+      try {
+        const tokenClient = gsi.initTokenClient({
+          client_id: clientId,
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse.error) {
+              reject(new Error(tokenResponse.error_description || tokenResponse.error || 'Google Sign-In failed.'));
+              return;
+            }
+            try {
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+              });
+              if (!res.ok) throw new Error('Failed to retrieve user profile from Google.');
+              const info = await res.json();
+              const uid = `google_${info.sub || info.id}`;
+              const role = await resolveServerRole(uid, info.email);
+              const userProfile: UserProfile = {
+                uid,
+                email: info.email || null,
+                displayName: info.name || info.given_name || info.email?.split('@')[0] || 'User',
+                photoURL: info.picture || null,
+                role,
+              };
+              sessionStorage.setItem('journal_auth_user', JSON.stringify(userProfile));
+              notifyAuthSubscribers(userProfile);
+              resolve(userProfile);
+            } catch (err: any) {
+              reject(new Error(`Failed to load Google account data: ${err.message}`));
+            }
+          },
+          error_callback: (err: any) => {
+            reject(new Error(err.message || 'Google Sign-In popup was closed or blocked.'));
+          },
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      } catch (gsiErr: any) {
+        console.error('GIS token client error:', gsiErr);
+      }
+    }
+
+    // 3. Fallback to Google OpenID Connect Prompt
+    const gsiId = (window as any).google?.accounts?.id;
+    if (gsiId) {
+      gsiId.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || configJson.oAuthClientId || '750034257375-k54uoh10esgk94r2d42hbnbc9grbjkd0.apps.googleusercontent.com',
+        callback: async (response: any) => {
+          try {
+            // Decode JWT payload
+            const base64Url = response.credential.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(
+              atob(base64)
+                .split('')
+                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+            );
+            const info = JSON.parse(jsonPayload);
+            const uid = `google_${info.sub}`;
+            const role = await resolveServerRole(uid, info.email);
+            const userProfile: UserProfile = {
+              uid,
+              email: info.email || null,
+              displayName: info.name || info.given_name || 'User',
+              photoURL: info.picture || null,
+              role,
+            };
+            sessionStorage.setItem('journal_auth_user', JSON.stringify(userProfile));
+            notifyAuthSubscribers(userProfile);
+            resolve(userProfile);
+          } catch (err: any) {
+            reject(new Error('Failed to process Google sign-in credentials.'));
+          }
+        },
+      });
+      gsiId.prompt((notification: any) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          reject(new Error('Google One Tap sign-in was skipped or not displayed in this browser context.'));
+        }
+      });
+      return;
+    }
+
+    reject(
+      new Error(
+        'Google Authentication service is initializing. Please verify network connection or allow popups and try again.'
+      )
+    );
+  });
+}
+
+// Direct / Account-bound Sign-In (For immediate access or when Google OAuth domains are being configured)
+export async function signInWithDirectEmail(email: string, name?: string): Promise<UserProfile> {
+  if (!email || !email.includes('@')) {
+    throw new Error('Please provide a valid email address.');
+  }
+  const cleanEmail = email.trim().toLowerCase();
+  const uid = `usr_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const displayName = name?.trim() || cleanEmail.split('@')[0];
+  const role = await resolveServerRole(uid, cleanEmail);
+
+  const profile: UserProfile = {
+    uid,
+    email: cleanEmail,
+    displayName,
+    photoURL: null,
+    role,
   };
-  localStorage.setItem('journal_demo_auth_user', JSON.stringify(mockUser));
-  return mockUser;
+
+  sessionStorage.setItem('journal_auth_user', JSON.stringify(profile));
+  notifyAuthSubscribers(profile);
+  return profile;
 }
 
 // Sign Out
 export async function logOut(): Promise<void> {
   if (auth && isFirebaseConfigured) {
-    await firebaseSignOut(auth);
+    try {
+      await firebaseSignOut(auth);
+    } catch (e) {
+      console.warn('Firebase signout warning:', e);
+    }
   }
+  sessionStorage.removeItem('journal_auth_user');
   localStorage.removeItem('journal_demo_auth_user');
+  notifyAuthSubscribers(null);
 }
 
 // Auth State Subscriber
 export function subscribeToAuth(callback: (user: UserProfile | null) => void): () => void {
+  authListeners.add(callback);
+
+  // If Firebase Auth is active
+  let firebaseUnsubscribe: (() => void) | null = null;
   if (auth && isFirebaseConfigured) {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
+    firebaseUnsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
       if (firebaseUser) {
         const role = await resolveServerRole(firebaseUser.uid, firebaseUser.email);
-        callback({
+        const userProfile: UserProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
-          displayName: firebaseUser.displayName || 'Journaler',
+          displayName: firebaseUser.displayName || 'User',
           photoURL: firebaseUser.photoURL,
           role,
-          isMock: false,
-        });
+        };
+        currentActiveUser = userProfile;
+        callback(userProfile);
       } else {
-        callback(null);
+        // Check session storage
+        const stored = sessionStorage.getItem('journal_auth_user');
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            resolveServerRole(parsed.uid, parsed.email).then((role) => {
+              const profile = { ...parsed, role };
+              currentActiveUser = profile;
+              callback(profile);
+            });
+            return;
+          } catch {
+            currentActiveUser = null;
+            callback(null);
+          }
+        } else {
+          currentActiveUser = null;
+          callback(null);
+        }
       }
     });
-    return unsubscribe;
-  }
-
-  // Check demo session from local store
-  const stored = localStorage.getItem('journal_demo_auth_user');
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      resolveServerRole(parsed.uid, parsed.email).then((role) => {
-        callback({ ...parsed, role });
-      });
-    } catch {
+  } else {
+    // Check session storage
+    const stored = sessionStorage.getItem('journal_auth_user');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        resolveServerRole(parsed.uid, parsed.email).then((role) => {
+          const profile = { ...parsed, role };
+          currentActiveUser = profile;
+          callback(profile);
+        });
+      } catch {
+        currentActiveUser = null;
+        callback(null);
+      }
+    } else {
+      currentActiveUser = null;
       callback(null);
     }
-  } else {
-    callback(null);
   }
 
-  // Return no-op unloader
-  return () => {};
+  return () => {
+    authListeners.delete(callback);
+    if (firebaseUnsubscribe) firebaseUnsubscribe();
+  };
 }
 
 // Save Entry with Guaranteed Persistence Verification
@@ -239,140 +406,6 @@ export async function saveJournalEntry(userId: string, entry: JournalEntry): Pro
   }
 }
 
-function getInitialSeedEntries(userId: string): JournalEntry[] {
-  const now = Date.now();
-  return [
-    {
-      id: `seed_entry_${userId}_1`,
-      userId,
-      title: 'Finding Clarity and Grounding in Nature',
-      topic: 'Mindfulness & Peace',
-      createdAt: new Date(now - 86400000 * 5).toISOString(),
-      updatedAt: new Date(now - 86400000 * 5).toISOString(),
-      moodScore: 0.72,
-      moodLabel: 'peaceful',
-      sentimentExplanation: 'Strong sense of calm equilibrium, mindful sensory grounding, and peaceful perspective.',
-      turns: [
-        {
-          id: 'turn_seed_1_u',
-          role: 'user',
-          content: 'I spent an hour walking near the coastal trails today. Left my phone behind and listened to the waves.',
-          timestamp: new Date(now - 86400000 * 5).toISOString(),
-          mode: 'reflection',
-        },
-        {
-          id: 'turn_seed_1_g',
-          role: 'gemini',
-          content: 'Unplugging intentionally allows your nervous system to reset. Notice how creating that physical space gave your thoughts room to untangle.',
-          timestamp: new Date(now - 86400000 * 5).toISOString(),
-          mode: 'reflection',
-          modelUsed: 'gemini-3.6-flash',
-          moodScore: 0.72,
-          moodLabel: 'peaceful',
-        },
-      ],
-      summary: 'A peaceful reflection on stepping away from digital stimuli and finding restorative grounding outdoors.',
-      keyThemes: ['Mindfulness', 'Nature', 'Mental Restoration'],
-    },
-    {
-      id: `seed_entry_${userId}_2`,
-      userId,
-      title: 'Midweek Deadline Friction and Cognitive Overload',
-      topic: 'Work & Productivity',
-      createdAt: new Date(now - 86400000 * 4).toISOString(),
-      updatedAt: new Date(now - 86400000 * 4).toISOString(),
-      moodScore: -0.38,
-      moodLabel: 'anxious',
-      sentimentExplanation: 'Mild anxiety and urgency driven by competing sprint deliverables and divided focus.',
-      turns: [
-        {
-          id: 'turn_seed_2_u',
-          role: 'user',
-          content: 'Feeling pulled in three directions with the upcoming product release. Hard to know what to prioritize.',
-          timestamp: new Date(now - 86400000 * 4).toISOString(),
-          mode: 'coaching',
-        },
-        {
-          id: 'turn_seed_2_g',
-          role: 'gemini',
-          content: 'When everything feels urgent, it helps to isolate the single highest-leverage task. Let us define what "good enough" looks like for today.',
-          timestamp: new Date(now - 86400000 * 4).toISOString(),
-          mode: 'coaching',
-          modelUsed: 'gemini-3.6-flash',
-          moodScore: -0.38,
-          moodLabel: 'anxious',
-        },
-      ],
-      summary: 'Addressed deadline friction and applied time-boxing strategies to mitigate task paralysis.',
-      keyThemes: ['Prioritization', 'Workload', 'Anxiety Management'],
-    },
-    {
-      id: `seed_entry_${userId}_3`,
-      userId,
-      title: 'Gratitude for Unexpected Team Support',
-      topic: 'Gratitude & Joy',
-      createdAt: new Date(now - 86400000 * 2).toISOString(),
-      updatedAt: new Date(now - 86400000 * 2).toISOString(),
-      moodScore: 0.85,
-      moodLabel: 'grateful',
-      sentimentExplanation: 'High positive valence with profound appreciation for collaborative camaraderie.',
-      turns: [
-        {
-          id: 'turn_seed_3_u',
-          role: 'user',
-          content: 'A colleague jumped in without being asked to help debug a tricky production issue. We solved it together.',
-          timestamp: new Date(now - 86400000 * 2).toISOString(),
-          mode: 'reflection',
-        },
-        {
-          id: 'turn_seed_3_g',
-          role: 'gemini',
-          content: 'Mutual support transforms difficult challenges into moments of deep trust and shared accomplishment.',
-          timestamp: new Date(now - 86400000 * 2).toISOString(),
-          mode: 'reflection',
-          modelUsed: 'gemini-3.6-flash',
-          moodScore: 0.85,
-          moodLabel: 'grateful',
-        },
-      ],
-      summary: 'Expressed appreciation for unexpected teamwork, reinforcing a sense of community and safety.',
-      keyThemes: ['Gratitude', 'Camaraderie', 'Team Culture'],
-    },
-    {
-      id: `seed_entry_${userId}_4`,
-      userId,
-      title: 'Renewed Energy and Architecture Roadmap',
-      topic: 'Career & Ambition',
-      createdAt: new Date(now - 86400000 * 1).toISOString(),
-      updatedAt: new Date(now - 86400000 * 1).toISOString(),
-      moodScore: 0.65,
-      moodLabel: 'motivated',
-      sentimentExplanation: 'Optimistic forward momentum and clarity regarding technical architecture plans.',
-      turns: [
-        {
-          id: 'turn_seed_4_u',
-          role: 'user',
-          content: 'Sketched out our architecture plan for Q3. Feeling eager to start building the prototype.',
-          timestamp: new Date(now - 86400000 * 1).toISOString(),
-          mode: 'brainstorm',
-        },
-        {
-          id: 'turn_seed_4_g',
-          role: 'gemini',
-          content: 'Clarity in architectural vision fuels intrinsic motivation. Focusing on the foundational milestones will maintain this momentum.',
-          timestamp: new Date(now - 86400000 * 1).toISOString(),
-          mode: 'brainstorm',
-          modelUsed: 'gemini-3.6-flash',
-          moodScore: 0.65,
-          moodLabel: 'motivated',
-        },
-      ],
-      summary: 'Structured planning session that generated clarity and actionable excitement for upcoming architectural initiatives.',
-      keyThemes: ['Motivation', 'Engineering', 'Strategic Focus'],
-    },
-  ];
-}
-
 // Fetch all entries for this authenticated user
 export async function fetchUserEntries(userId: string): Promise<JournalEntry[]> {
   if (!userId) return [];
@@ -394,21 +427,11 @@ export async function fetchUserEntries(userId: string): Promise<JournalEntry[]> 
     }
   }
 
-  // Fallback (or initial seed if user is starting fresh)
+  // Local fallback storage for user entries
   const storageKey = `journal_entries_${userId}`;
   const raw = localStorage.getItem(storageKey);
   if (!raw) {
-    const seed = getInitialSeedEntries(userId);
-    localStorage.setItem(storageKey, JSON.stringify(seed));
-    // Synchronize seeds to server
-    seed.forEach((e) => {
-      fetch('/api/entries/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(e),
-      }).catch(() => {});
-    });
-    return seed;
+    return [];
   }
   try {
     const list: JournalEntry[] = JSON.parse(raw);
@@ -446,7 +469,7 @@ export async function deleteUserEntry(userId: string, entryId: string): Promise<
 }
 
 // ============================================================================
-// DIRECTIVE 9: CLIENT ADMIN RBAC & AUDIT LOGGING ADAPTERS
+// CLIENT ADMIN RBAC & AUDIT LOGGING ADAPTERS
 // ============================================================================
 
 export interface AdminEntriesResponse {
@@ -560,7 +583,7 @@ export async function bootstrapUserRole(
   });
 }
 
-// Directive 10: External Notification Services
+// External Notification Services
 
 export async function dispatchSlackNotification(
   caller: UserProfile,

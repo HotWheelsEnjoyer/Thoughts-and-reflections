@@ -112,7 +112,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============================================================================
-// DIRECTIVE 12: MOOD-TREND SENTIMENT SCHEMA & UNTRUSTED OUTPUT VALIDATION
+// MOOD-TREND SENTIMENT SCHEMA & UNTRUSTED OUTPUT VALIDATION
 // ============================================================================
 
 const ALLOWED_MOOD_LABELS = new Set<string>([
@@ -181,8 +181,8 @@ function validateModelOutputAndMood(rawResponseText: string): ValidatedMoodOutpu
   try {
     parsed = JSON.parse(rawResponseText);
   } catch {
-    // If JSON parsing fails, extract text directly without crashing (Directive 12: fail-open for reflection content)
-    console.warn('[Directive 12 - OWASP LLM05] JSON parse failed on Gemini response text. Fallback to raw text without mood fields.');
+    // If JSON parsing fails, extract text directly without crashing (fail-open for reflection content)
+    console.warn('[OWASP LLM05] JSON parse failed on Gemini response text. Fallback to raw text without mood fields.');
     return {
       reply: rawResponseText.trim() || 'Thank you for sharing your thoughts.',
       moodScore: null,
@@ -202,7 +202,7 @@ function validateModelOutputAndMood(rawResponseText: string): ValidatedMoodOutpu
     ? parsed.sentimentExplanation.trim().slice(0, 300)
     : null;
 
-  // OWASP LLM05 & Directive 12 validation:
+  // OWASP LLM05 validation:
   // moodScore must be numeric and bounded strictly between -1.0 and +1.0
   const isScoreNumeric = typeof rawScore === 'number' && !isNaN(rawScore);
   const isScoreBounded = isScoreNumeric && rawScore >= -1.0 && rawScore <= 1.0;
@@ -212,7 +212,7 @@ function validateModelOutputAndMood(rawResponseText: string): ValidatedMoodOutpu
 
   if (!isScoreBounded || !isLabelValid) {
     console.warn(
-      `[Directive 12 - OWASP LLM05] Untrusted model output validation failed: moodScore=${rawScore} (valid=${isScoreBounded}), moodLabel=${rawLabel} (valid=${isLabelValid}). Storing entry with mood fields omitted/null.`
+      `[OWASP LLM05] Untrusted model output validation failed: moodScore=${rawScore} (valid=${isScoreBounded}), moodLabel=${rawLabel} (valid=${isLabelValid}). Storing entry with mood fields omitted/null.`
     );
     return {
       reply,
@@ -303,7 +303,7 @@ Guidelines:
       parts: [{ text: prompt }],
     });
 
-    // Directive 12: Reuse existing entry-generation call with constrained structured schema
+    // Reuse existing entry-generation call with constrained structured schema
     const result = await generateContentWithFallback(
       contents,
       systemInstruction,
@@ -374,7 +374,7 @@ ${conversationTranscript}`;
   }
 });
 
-// DIRECTIVE 8: GOOGLE MAPS INTEGRATION BACKEND PROXY & COORDINATE VALIDATION
+// GOOGLE MAPS INTEGRATION BACKEND PROXY & COORDINATE VALIDATION
 
 // Input Validation Helper (Strict bounds check)
 function isValidCoordinate(coord: any): boolean {
@@ -459,7 +459,7 @@ app.post('/api/location/resolve', async (req, res) => {
 });
 
 // ============================================================================
-// DIRECTIVE 9: ADMIN DASHBOARD & RBAC BACKEND ARCHITECTURE
+// ADMIN DASHBOARD & RBAC BACKEND ARCHITECTURE
 // Server-Side Role Resolution, Anti-Self-Elevation & Immutable Audit Logging
 // ============================================================================
 
@@ -482,13 +482,8 @@ interface ServerAuditLogEntry {
 }
 
 // In-Memory Authoritative Role & Entries Ledger
-const authoritativeUserRoles = new Map<string, 'admin' | 'user'>([
-  ['demo_user_google_id_91779', 'admin'],
-]);
-
-const authoritativeUserEmails = new Map<string, string>([
-  ['demo_user_google_id_91779', 'nimalanke24@gmail.com'],
-]);
+const authoritativeUserRoles = new Map<string, 'admin' | 'user'>();
+const authoritativeUserEmails = new Map<string, string>();
 
 const DEFAULT_ADMIN_EMAILS = new Set<string>([
   'nimalanke24@gmail.com',
@@ -498,101 +493,8 @@ const DEFAULT_ADMIN_EMAILS = new Set<string>([
 // Server-side entries repository for cross-user moderation
 const serverEntriesRepository = new Map<string, any>();
 
-// Seed sample user entries for moderation demonstration
-const sampleUsers = [
-  {
-    userId: 'user_alex_392',
-    email: 'alex.rivera@example.com',
-    entries: [
-      {
-        id: 'entry_sample_alex_1',
-        userId: 'user_alex_392',
-        title: 'Overcoming Imposter Syndrome in Tech',
-        topic: 'Career & Ambition',
-        createdAt: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-        updatedAt: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-        turns: [
-          {
-            id: 't1',
-            role: 'user',
-            content: 'I recently joined a senior engineering team and feel completely out of my depth. How do I stop comparing myself to others?',
-            timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-          },
-          {
-            id: 't2',
-            role: 'gemini',
-            content: 'It is very natural to experience a confidence dip during transitions into higher-stakes environments. Let us separate your feelings of inadequacy from evidence of competence.',
-            timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-          }
-        ],
-        summary: 'Alex explored feelings of imposter syndrome after joining a senior engineering cohort, identifying action items around evidence logging and peer check-ins.',
-        keyThemes: ['Imposter Syndrome', 'Career Growth', 'Self-Compassion'],
-        location: { lat: 37.775, lng: -122.419, name: 'San Francisco, CA', approximate: true }
-      }
-    ]
-  },
-  {
-    userId: 'user_sam_817',
-    email: 'sam.taylor@example.com',
-    entries: [
-      {
-        id: 'entry_sample_sam_1',
-        userId: 'user_sam_817',
-        title: 'Navigating Burnout and Boundary Setting',
-        topic: 'Mindfulness & Peace',
-        createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-        updatedAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-        turns: [
-          {
-            id: 't1',
-            role: 'user',
-            content: 'I have been working 65 hours a week and feeling completely numb. Need a grounding strategy.',
-            timestamp: new Date(Date.now() - 3600000 * 12).toISOString(),
-          }
-        ],
-        summary: 'Sam expressed deep fatigue and numbness from chronic overwork, seeking boundary setting strategies.',
-        keyThemes: ['Workplace Burnout', 'Emotional Exhaustion', 'Boundaries'],
-        moderation: {
-          isFlagged: true,
-          moderationStatus: 'flagged',
-          moderationNote: 'Flagged for mental health well-being review and supportive follow-up.',
-          moderatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-          moderatedBy: 'demo_user_google_id_91779'
-        }
-      }
-    ]
-  }
-];
-
-// Populate seed entries
-sampleUsers.forEach((u) => {
-  u.entries.forEach((e) => {
-    serverEntriesRepository.set(e.id, e);
-  });
-  authoritativeUserRoles.set(u.userId, 'user');
-  authoritativeUserEmails.set(u.userId, u.email);
-});
-
-// Immutable Audit Log Store (Directive 9)
-const serverAuditLogs: ServerAuditLogEntry[] = [
-  {
-    id: 'audit_init_seed_1',
-    action: 'FLAG_ENTRY',
-    performedBy: {
-      uid: 'demo_user_google_id_91779',
-      email: 'nimalanke24@gmail.com',
-    },
-    target: {
-      userId: 'user_sam_817',
-      entryId: 'entry_sample_sam_1',
-      title: 'Navigating Burnout and Boundary Setting',
-    },
-    beforeState: { isFlagged: false, moderationStatus: 'approved' },
-    afterState: { isFlagged: true, moderationStatus: 'flagged', note: 'Mental health check' },
-    timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-    reason: 'Routine wellness trigger flag during initial seeding.',
-  }
-];
+// Immutable Audit Log Store
+const serverAuditLogs: ServerAuditLogEntry[] = [];
 
 // Authoritative Server-Side Role Resolver (Never trusts client claims)
 function resolveAuthoritativeRole(uid: string, email?: string): 'admin' | 'user' {
@@ -797,7 +699,7 @@ app.post('/api/admin/moderate-entry', requireAdminRole, (req, res) => {
     };
     serverEntriesRepository.set(entryId, updatedEntry);
 
-    // Create immutable audit log entry (Directive 9)
+    // Create immutable audit log entry
     const auditRecord: ServerAuditLogEntry = {
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       action: auditAction,
@@ -892,7 +794,7 @@ app.get('/api/admin/audit-logs', requireAdminRole, (_req, res) => {
   }
 });
 
-// Directive 12: Admin Cohort Wellness Signal (Cohort-level & strictly anonymized with audit logging)
+// Admin Cohort Wellness Signal (Cohort-level & strictly anonymized with audit logging)
 app.get('/api/admin/cohort-sentiment', requireAdminRole, (req, res) => {
   try {
     const admin = (req as any).adminUser;
@@ -913,7 +815,7 @@ app.get('/api/admin/cohort-sentiment', requireAdminRole, (req, res) => {
       }
     }
 
-    // Directive 12 & Directive 9: Mandatory Immutable Audit Logging of Admin Wellness Reads
+    // Mandatory Immutable Audit Logging of Admin Wellness Reads
     serverAuditLogs.unshift({
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       action: 'VIEW_COHORT_WELLNESS',
@@ -946,7 +848,7 @@ app.get('/api/admin/cohort-sentiment', requireAdminRole, (req, res) => {
   }
 });
 
-// Change User Role with Anti-Self-Elevation Protection (Directive 9)
+// Change User Role with Anti-Self-Elevation Protection
 app.post('/api/admin/change-user-role', requireAdminRole, (req, res) => {
   try {
     const { targetUserId, newRole, reason } = req.body || {};
@@ -1053,7 +955,7 @@ app.post('/api/admin/bootstrap-role', requireAdminRole, (req, res) => {
 });
 
 // ============================================================================
-// DIRECTIVE 10: EXTERNAL NOTIFICATION INTEGRATION (SLACK WEBHOOKS)
+// EXTERNAL NOTIFICATION INTEGRATION (SLACK WEBHOOKS)
 // Secret Storage, SSRF Allowlist & IP Guards, Payload Sanitization, Rate Limiting & Idempotency
 // ============================================================================
 
@@ -1351,7 +1253,7 @@ app.post('/api/notifications/notify-entry', async (req, res) => {
       });
     }
 
-    // Resolve Destination Webhook (Directive 10: Secret Manager vs Validated Custom URL)
+    // Resolve Destination Webhook (Secret Manager vs Validated Custom URL)
     let destinationUrl: string | undefined;
     let isCustom = false;
 
@@ -1432,7 +1334,7 @@ app.post('/api/notifications/notify-entry', async (req, res) => {
           elements: [
             {
               type: 'mrkdwn',
-              text: `🔒 *Idempotency Key:* \`${idempotencyKey}\` | *Time:* ${nowIso} | *Directive 10 Secured*`,
+              text: `🔒 *Idempotency Key:* \`${idempotencyKey}\` | *Time:* ${nowIso} | *Secure Delivery*`,
             },
           ],
         },
@@ -1546,7 +1448,7 @@ app.get('/api/notifications/history', (req, res) => {
 });
 
 // =========================================================================
-// DIRECTIVE 11: EXPIRING SHAREABLE READ LINKS ENGINE
+// EXPIRING SHAREABLE READ LINKS ENGINE
 // =========================================================================
 
 interface ServerShareLinkRecord {
@@ -1569,7 +1471,7 @@ interface ServerShareLinkRecord {
 // In-memory repository (simulating Admin SDK access to /shareLinks collection)
 const serverShareLinksRepository = new Map<string, ServerShareLinkRecord>();
 
-// 1. High-Entropy Cryptographic Token Generator (192 bits of entropy per Directive 11)
+// 1. High-Entropy Cryptographic Token Generator (192 bits of entropy)
 function generateShareToken(): string {
   return crypto.randomBytes(24).toString('base64url');
 }
@@ -1583,8 +1485,8 @@ serverShareLinksRepository.set(sampleActiveToken, {
   createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
   expiresAt: new Date(Date.now() + 3600000 * 22).toISOString(),
   revoked: false,
-  includeLocation: false, // Stripped by default per Directive 11
-  includeMood: false,     // Stripped by default per Directive 11
+  includeLocation: false, // Stripped by default for privacy
+  includeMood: false,     // Stripped by default for privacy
   accessCount: 3,
   lastAccessedAt: new Date(Date.now() - 1800000).toISOString(),
   accessLogs: [
@@ -1621,7 +1523,7 @@ serverShareLinksRepository.set(sampleRevokedToken, {
   accessLogs: [],
 });
 
-// 3. Abuse Throttling & Security Guards (Directive 11)
+// 3. Abuse Throttling & Security Guards
 // - Token format validation: base64url characters only, 16-64 chars
 const SHARE_TOKEN_REGEX = /^[A-Za-z0-9_-]{16,64}$/;
 
@@ -1658,7 +1560,7 @@ function checkShareRateLimit(key: string, maxLimit: number): { allowed: boolean;
   return { allowed: true, remaining: maxLimit - bucket.count };
 }
 
-// 4. Public Sanitized Read Endpoint: GET /api/share/:token (Directive 11)
+// 4. Public Sanitized Read Endpoint: GET /api/share/:token
 app.get('/api/share/:token', (req, res) => {
   try {
     const token = req.params.token;
@@ -1696,7 +1598,7 @@ app.get('/api/share/:token', (req, res) => {
       });
     }
 
-    // Server-side check 1: Revocation (checked ahead of expiry per Directive 11)
+    // Server-side check 1: Revocation (checked ahead of expiry)
     if (link.revoked) {
       return res.status(410).json({
         error: 'This share link has been revoked by the author.',
@@ -1740,7 +1642,7 @@ app.get('/api/share/:token', (req, res) => {
       link.accessLogs.shift();
     }
 
-    // Field Minimization on the Shared View (Directive 11):
+    // Field Minimization on the Shared View:
     // 1. Strip location by default unless explicitly included by owner
     // 2. Strip moodScore & moodLabel by default
     // 3. Strip internal user IDs, email, moderation flags, and notification state
@@ -1761,11 +1663,11 @@ app.get('/api/share/:token', (req, res) => {
       turns: sanitizedTurns,
       summary: entry.summary,
       keyThemes: entry.keyThemes,
-      // Geospatial minimization (Directive 8 & 11)
+      // Geospatial minimization
       hasLocation: Boolean(entry.location),
       location: link.includeLocation ? entry.location : undefined,
       locationStripped: Boolean(entry.location && !link.includeLocation),
-      // Mood sentiment minimization (Directive 12 & 11)
+      // Mood sentiment minimization
       hasMood: Boolean(entry.moodScore !== undefined),
       moodScore: link.includeMood ? entry.moodScore : undefined,
       moodLabel: link.includeMood ? entry.moodLabel : undefined,

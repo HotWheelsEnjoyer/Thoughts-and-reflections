@@ -86,17 +86,17 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Expiring Share Link Modal State (Directive 11)
+  // Expiring Share Link Modal State
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
-  // Location Attachment State (Directive 8)
+  // Location Attachment State
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [isResolvingLocation, setIsResolvingLocation] = useState(false);
   const [manualLat, setManualLat] = useState('');
   const [manualLng, setManualLng] = useState('');
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  // Notification State (Directive 10)
+  // Notification State
   const [isDispatchingNotification, setIsDispatchingNotification] = useState(false);
   const [notificationAlert, setNotificationAlert] = useState<{
     type: 'success' | 'error' | 'info';
@@ -327,7 +327,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
       // 2. Persist to Cloud Firestore with Guaranteed Verification
       await saveJournalEntry(user.uid, updatedEntry);
 
-      // Directive 10: Auto-dispatch Slack notification if entry is of specific type 'crisis_support'
+      // Auto-dispatch Slack notification if entry is of specific type 'crisis_support'
       const isCrisisEntry = updatedEntry.entryType === 'crisis_support' || updatedEntry.topic === 'Crisis & Urgent Support';
       if (isCrisisEntry && !updatedEntry.notification?.sent) {
         handleDispatchSlackAlert(updatedEntry).catch(console.error);
@@ -342,7 +342,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
       console.error('Failed to complete interaction or persist to Firestore:', err);
       setErrorMessage(err.message || 'Failed to communicate with Gemini or save to Firestore.');
       setSaveStatus('error');
-      // Per directive: Do NOT clear inputPrompt so user can retry without losing their writing
+      // Do NOT clear inputPrompt so user can retry without losing their writing
     } finally {
       setIsSubmitting(false);
     }
@@ -430,7 +430,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               id="btn-share-entry"
               onClick={() => setIsShareModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-medium transition"
-              title="Generate expiring shareable read link (Directive 11)"
+              title="Generate expiring shareable read link"
             >
               <Share2 className="w-3.5 h-3.5 text-amber-600" />
               <span>Share Link</span>
@@ -454,7 +454,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
           </div>
         </div>
 
-        {/* Entry Classification & Slack Alert Mode (Directive 10) */}
+        {/* Entry Classification & Slack Alert Mode */}
         <div className="pt-3 pb-2 flex flex-wrap items-center justify-between gap-3 border-b border-stone-100">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-stone-600">Entry Type:</span>
@@ -515,7 +515,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
                 <Shield className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-semibold text-rose-900">
-                    Crisis & Urgent Support Pipeline Active (Directive 10)
+                    Crisis & Urgent Support Pipeline Active
                   </div>
                   <div className="text-rose-700 mt-0.5">
                     Entries of this specific type automatically notify the coaching team on Slack. Messages are sanitized against ping injection (<code className="bg-rose-100 px-1 py-0.5 rounded">@everyone</code> disarmed), rate-limited (5/10m), and stamped with an idempotency key.
@@ -843,7 +843,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
         </form>
       </div>
 
-      {/* Location Attachment & Privacy Consent Modal (Directive 8) */}
+      {/* Location Attachment & Privacy Consent Modal */}
       {isLocationModalOpen && (
         <div
           id="location-modal-backdrop"
@@ -872,7 +872,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               </button>
             </div>
 
-            {/* Directive 8 Privacy & Consent Notice */}
+            {/* Privacy & Consent Notice */}
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 mb-4 leading-relaxed">
               <span className="font-semibold">Explicit Privacy & Data Minimization:</span> Location data is personal. Attaching location stores approximate coordinates (~100m precision) under your private, owner-isolated document. Lookups are proxied securely through the backend.
             </div>
@@ -968,7 +968,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
           </div>
         </div>
       )}
-      {/* Directive 11: Expiring Shareable Read Links Modal */}
+      {/* Expiring Shareable Read Links Modal */}
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}

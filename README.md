@@ -2,29 +2,35 @@
 
 A production-grade, user-authenticated journaling and reflective coaching web application powered by the **Gemini 3.6 Flash API**, **Firebase Authentication**, **Cloud Firestore**, and **Google Maps Platform**.
 
-The platform provides end-to-end user isolation, server-side role-based access control (RBAC), outbound SSRF defense for external webhooks, dual-key geospatial privacy, and comprehensive administrative moderation—built to adhere strictly to OWASP Top 10 Web & LLM standards and enterprise production directives.
+The platform provides end-to-end user isolation, server-side role-based access control (RBAC), outbound SSRF defense for external webhooks, dual-key geospatial privacy, and comprehensive administrative moderation—built to adhere strictly to OWASP Top 10 Web & LLM standards.
 
 ---
 
-## Key Features & Production Directives
+## Key Features & Security Architecture
 
 * **AI Reflective Dialogue**: Multi-turn conversational coaching powered by `@google/genai` on an Express backend with an automated 4-tier model fallback ladder (`gemini-3.6-flash`, `gemini-2.5-flash`, etc.).
-* **Google Maps Dual-Key Architecture (Directive 8)**:
+* **Google Maps Dual-Key Architecture**:
   * *Browser Key*: Restricted strictly by HTTP referrer in Google Cloud Console, used only for the interactive Maps JavaScript client.
   * *Server Key*: Restricted by IP address and accessed strictly via Secret Manager on the backend for geocoding and reverse lookup proxies.
   * *Coordinate Validation & Data Minimization*: Server-side lat/lng range verification (`[-90, 90]` / `[-180, 180]`), optional ~100m privacy rounding, and SSRF-safe address resolution.
-* **Administrative RBAC & Anti-Self-Elevation (Directive 9)**:
+* **Administrative RBAC & Anti-Self-Elevation**:
   * Authoritative server-side role resolution (roles never accepted from client input or tokens).
   * Firestore rules explicitly block users from mutating their own `role` field.
   * Full content moderation suite with note attachment and deletion capabilities.
   * Immutable audit logging (`/adminAuditLog/{logId}`) capturing who, what, before/after states, and timestamps; writable exclusively by the backend Admin SDK.
-* **External Notification Pipeline & SSRF Guard (Directive 10)**:
+* **External Notification Pipeline & SSRF Guard**:
   * Automated Slack Block Kit alerts dispatched when a user flags a reflection as `crisis_support` ("Crisis & Urgent Support").
   * Org-wide webhook stored in Google Cloud Secret Manager (`SLACK_WEBHOOK_URL`) with zero client-side exposure.
   * Comprehensive SSRF defense (`isPrivateOrRestrictedIp`): Pre-flight DNS resolution blocking cloud metadata (`169.254.169.254`), loopback (`127.0.0.1`), RFC1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), carrier-grade NAT, non-standard ports, and HTTP redirects (`redirect: 'error'`).
   * Domain allowlist enforcement (`hooks.slack.com`, `discord.com`, `discordapp.com`).
   * Anti-ping payload sanitization disarming broadcast mentions (`@everyone`, `@here`, `<@...>`) and escaping Slack formatting brackets.
   * Per-user sliding token bucket rate limiter (max 5 alerts / 10m window) and 24-hour revision-based idempotency cache (`slack_${entryId}_${turnCount}`) with bounded memory management (CWE-400 mitigation).
+* **Expiring Shareable Read Links**:
+  * 192-bit cryptographic entropy URLs with time-to-live expiration and instant one-click author revocation.
+  * Field minimization stripping location and telemetry by default.
+* **Mood & Sentiment Trend Visualization**:
+  * Constrained structured output schema on Gemini responses extracting bounded valence scores (`-1.0` to `+1.0`) and sentiment labels.
+  * Strict per-user scoped trend timelines and chart visualizations with zero cross-user leakage.
 
 ---
 
@@ -78,7 +84,7 @@ echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets versions add GEMINI_API_KEY --dat
 gcloud secrets create GOOGLE_MAPS_SERVER_KEY --replication-policy="automatic"
 echo -n "YOUR_MAPS_SERVER_KEY" | gcloud secrets versions add GOOGLE_MAPS_SERVER_KEY --data-file=-
 
-# 3. Organization Slack Webhook URL (Directive 10)
+# 3. Organization Slack Webhook URL
 gcloud secrets create SLACK_WEBHOOK_URL --replication-policy="automatic"
 echo -n "https://hooks.slack.com/services/T000/B000/XXXX" | gcloud secrets versions add SLACK_WEBHOOK_URL --data-file=-
 
@@ -106,13 +112,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // DIRECTIVE 9: Server-Side Role Helper
+    // Server-Side Role Helper
     function isAdmin() {
       return request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // DIRECTIVE 9: User Profiles with Anti-Self-Elevation
+    // User Profiles with Anti-Self-Elevation
     match /users/{userId} {
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
       // Initial profile creation: Must be standard 'user' or unset
@@ -125,13 +131,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // DIRECTIVE 9: Immutable Admin Audit Log (written exclusively by backend Admin SDK)
+    // Immutable Admin Audit Log (written exclusively by backend Admin SDK)
     match /adminAuditLog/{logId} {
       allow read: if isAdmin();
       allow write: if false;
     }
 
-    // User Data Isolation & Location Shape Validation (Directives 8 & 9)
+    // User Data Isolation & Location Shape Validation
     match /users/{userId}/entries/{entryId} {
       allow create: if request.auth != null && request.auth.uid == userId
         && (!("location" in request.resource.data) ||
@@ -250,7 +256,7 @@ The following 10 test cases verify end-to-end functionality and security complia
 * **Action**: Sign in and submit a prompt (e.g., "I feel overwhelmed with prioritization").
 * **Expected Result**: Server calls `gemini-3.6-flash` via the Express proxy. The AI provides guided reflection prompts and saves the turn to the conversation transcript.
 
-### Test Case 3: Google Maps Dual-Key Location Attachment (Directive 8)
+### Test Case 3: Google Maps Dual-Key Location Attachment
 * **Action**: Click "Attach Reflection Place / Location", search for a location or click the interactive map.
 * **Expected Result**:
   * Browser uses `VITE_GOOGLE_MAPS_BROWSER_KEY` for map rendering.
@@ -262,7 +268,7 @@ The following 10 test cases verify end-to-end functionality and security complia
 * **Action**: Check Firestore document path `/users/{userId}/entries/{entryId}`.
 * **Expected Result**: Document is written under the user's isolated document tree. Any attempt by another non-admin user to read this path results in `PERMISSION_DENIED`.
 
-### Test Case 5: Role Resolution & Anti-Self-Elevation (Directive 9)
+### Test Case 5: Role Resolution & Anti-Self-Elevation
 * **Action**: In the Admin Dashboard under the "RBAC Security" tab, click "Simulate Self-Elevation Attack".
 * **Expected Result**: The backend rejects the attempt with `403 Forbidden` (`Admins cannot modify their own role. Anti-self-elevation enforced.`).
 
@@ -270,14 +276,14 @@ The following 10 test cases verify end-to-end functionality and security complia
 * **Action**: In the Admin Dashboard "Moderation Center", add a note or flag an entry.
 * **Expected Result**: Action succeeds and generates an immutable record in `/adminAuditLog/{logId}` recording the admin's UID, action, before/after values, and timestamp.
 
-### Test Case 7: Crisis Alert Slack Notification Trigger (Directive 10)
+### Test Case 7: Crisis Alert Slack Notification Trigger
 * **Action**: In the journal editor, switch Entry Type from `Standard Reflection` to `🚨 Crisis & Urgent Support` and save.
 * **Expected Result**:
   * Automatic webhook dispatch triggers to Slack.
   * Slack Block Kit alert includes sanitized title, masked user ID, timestamp, and crisis coaching badge.
   * Webhook destination is masked in client logs (`hooks.slack.com/services/ORG_...`).
 
-### Test Case 8: Outbound SSRF & Cloud Metadata Defense (Directive 10)
+### Test Case 8: Outbound SSRF & Cloud Metadata Defense
 * **Action**: In the Admin Dashboard "Slack & SSRF Guard" tab, click the `🚨 Metadata SSRF (169.254.169.254)` test vector.
 * **Expected Result**: SSRF inspector rejects the URL with `SSRF Violation: Resolved IP 169.254.169.254 belongs to a prohibited or link-local subnet`.
 
@@ -291,7 +297,7 @@ The following 10 test cases verify end-to-end functionality and security complia
 
 ---
 
-## 7. Security Reviewer Assessment (Directive 5 Summary)
+## 7. Security Architecture & Threat Mitigations
 
 | Vulnerability / Risk | Severity | Mitigation Applied |
 | :--- | :---: | :--- |
@@ -300,3 +306,4 @@ The following 10 test cases verify end-to-end functionality and security complia
 | **Non-Standard Port Scanning** | **MEDIUM** | Strict restriction to standard HTTPS port 443 during webhook URL validation. |
 | **TOCTOU DNS Rebinding** | **MEDIUM** | Domain allowlisting restricted to verified providers (`hooks.slack.com`, `discord.com`, `discordapp.com`). |
 | **Mention & Ping Injection** | **LOW** | Server-side sanitizer neutralizes `@everyone`, `@here`, `<@...>`, and escapes mrkdwn formatting brackets. |
+
